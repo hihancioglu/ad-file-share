@@ -68,6 +68,23 @@
     </div>
 </div>
 
+<div class="modal fade" id="userModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Kullanıcı Seç</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="ou-tree"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="user-modal-add">Ekle</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="teamModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -261,17 +278,59 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 loadTeams();
 
 document.getElementById('load-users').addEventListener('click', async () => {
-    const res = await fetch('/users/list');
+    const res = await fetch('/users/tree');
     const json = await res.json();
-    const select = document.getElementById('team-members');
-    select.innerHTML = '';
-    json.users.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u;
-        opt.textContent = u;
-        select.appendChild(opt);
-    });
+    const container = document.getElementById('ou-tree');
+    container.innerHTML = '';
+    renderTree(json.tree, container);
+    const modal = new bootstrap.Modal(document.getElementById('userModal'));
+    modal.show();
 });
+
+document.getElementById('user-modal-add').addEventListener('click', () => {
+    const select = document.getElementById('team-members');
+    document.querySelectorAll('#ou-tree input.user-checkbox:checked').forEach(cb => {
+        if (!Array.from(select.options).some(o => o.value === cb.value)) {
+            const opt = document.createElement('option');
+            opt.value = cb.value;
+            opt.textContent = cb.dataset.name;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+        cb.checked = false;
+    });
+    bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
+});
+
+function renderTree(nodes, parent) {
+    const ul = document.createElement('ul');
+    nodes.forEach(node => {
+        const li = document.createElement('li');
+        li.textContent = node.name;
+        if (node.users && node.users.length > 0) {
+            const userUl = document.createElement('ul');
+            node.users.forEach(u => {
+                const userLi = document.createElement('li');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'user-checkbox';
+                cb.value = u.username;
+                cb.dataset.name = `${u.givenName} ${u.sn}`.trim();
+                const label = document.createElement('span');
+                label.textContent = `${u.givenName} ${u.sn}`.trim();
+                userLi.appendChild(cb);
+                userLi.appendChild(label);
+                userUl.appendChild(userLi);
+            });
+            li.appendChild(userUl);
+        }
+        if (node.children && node.children.length > 0) {
+            renderTree(node.children, li);
+        }
+        ul.appendChild(li);
+    });
+    parent.appendChild(ul);
+}
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
