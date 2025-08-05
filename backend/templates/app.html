@@ -13,6 +13,7 @@
             <ul class="nav flex-column">
                 <li class="nav-item"><a class="nav-link" href="#upload">Yükle</a></li>
                 <li class="nav-item"><a class="nav-link" href="#files">Dosyalarım</a></li>
+                <li class="nav-item"><a class="nav-link" href="#teams">Ekipler</a></li>
             </ul>
         </div>
     </nav>
@@ -48,6 +49,16 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </section>
+
+        <section id="teams" class="mt-4">
+            <h2>Ekipler</h2>
+            <form id="team-form" class="mb-3">
+                <input type="text" id="team-name" class="form-control mb-2" placeholder="Ekip adı" required>
+                <input type="text" id="team-members" class="form-control mb-2" placeholder="Üyeler (virgülle ayır)">
+                <button class="btn btn-primary" type="submit">Oluştur</button>
+            </form>
+            <ul id="team-list" class="list-group"></ul>
         </section>
     </div>
 </div>
@@ -137,6 +148,49 @@ function formatSize(bytes) {
 }
 
 loadFiles();
+
+async function loadTeams() {
+    const formData = new FormData();
+    formData.append('username', username);
+    const res = await fetch('/teams/list', { method: 'POST', body: formData });
+    const json = await res.json();
+    const list = document.getElementById('team-list');
+    list.innerHTML = '';
+    json.teams.forEach(team => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.textContent = `${team.name} (${team.members.join(', ')})`;
+        const btn = document.createElement('button');
+        const isCreator = team.creator === username;
+        btn.className = 'btn btn-sm ' + (isCreator ? 'btn-danger' : 'btn-outline-secondary');
+        btn.textContent = isCreator ? 'Sil' : 'Ayrıl';
+        btn.addEventListener('click', async () => {
+            const data = new FormData();
+            data.append('username', username);
+            data.append('team_id', team.id);
+            await fetch(isCreator ? '/teams/delete' : '/teams/leave', { method: 'POST', body: data });
+            loadTeams();
+        });
+        li.appendChild(btn);
+        list.appendChild(li);
+    });
+}
+
+document.getElementById('team-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('team_name', document.getElementById('team-name').value);
+    formData.append('members', document.getElementById('team-members').value);
+    const res = await fetch('/teams/create', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.success) {
+        document.getElementById('team-form').reset();
+        loadTeams();
+    }
+});
+
+loadTeams();
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');

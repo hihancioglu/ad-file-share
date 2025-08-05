@@ -6,7 +6,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 import ldap3
 from dotenv import load_dotenv
-from sqlalchemy import Column, DateTime, Integer, String, create_engine
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
@@ -44,6 +44,22 @@ class DownloadLog(Base):
     username = Column(String, index=True)
     filename = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    creator = Column(String, index=True)
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), index=True)
+    username = Column(String, index=True)
 
 
 Base.metadata.create_all(engine)
@@ -254,6 +270,89 @@ def stats():
         download_count=len(logs_data),
         download_logs=logs_data,
     )
+
+
+@app.route("/teams/create", methods=["POST"])
+def create_team():
+    username = request.form.get("username")
+    team_name = request.form.get("team_name")
+    members = request.form.get("members", "")
+    member_list = [m.strip() for m in members.split(",") if m.strip()]
+    db = SessionLocal()
+    try:
+        team = Team(name=team_name, creator=username)
+        db.add(team)
+        db.commit()
+        db.refresh(team)
+        db.add(TeamMember(team_id=team.id, username=username))
+        for m in member_list:
+            db.add(TeamMember(team_id=team.id, username=m))
+        db.commit()
+        return jsonify(success=True, team_id=team.id)
+    finally:
+        db.close()
+
+
+@app.route("/teams/delete", methods=["POST"])
+def delete_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    db = SessionLocal()
+    try:
+        team = db.query(Team).filter_by(id=team_id).first()
+        if not team:
+            return jsonify(success=False, error="Ekip bulunamadı")
+        if team.creator != username:
+            return jsonify(success=False, error="Yetkiniz yok")
+        db.query(TeamMember).filter_by(team_id=team_id).delete()
+        db.delete(team)
+        db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/teams/leave", methods=["POST"])
+def leave_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        if membership:
+            db.delete(membership)
+            db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/teams/list", methods=["POST"])
+def list_teams():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        memberships = db.query(TeamMember).filter_by(username=username).all()
+        team_ids = [m.team_id for m in memberships]
+        teams = db.query(Team).filter(Team.id.in_(team_ids)).all()
+        data = []
+        for t in teams:
+            members = db.query(TeamMember).filter_by(team_id=t.id).all()
+            data.append(
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "creator": t.creator,
+                    "members": [m.username for m in members],
+                }
+            )
+        return jsonify(teams=data)
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
