@@ -34,7 +34,20 @@
 
         <section id="files">
             <h2>Dosyalarım</h2>
-            <ul id="file-list" class="list-group"></ul>
+            <button id="delete-selected" class="btn btn-danger mb-2" disabled>Sil</button>
+            <table id="file-table" class="table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Başlık</th>
+                        <th>Eklenme Tarihi</th>
+                        <th>Uzantı</th>
+                        <th>Açıklama</th>
+                        <th>Boyut</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
         </section>
     </div>
 </div>
@@ -48,19 +61,79 @@ if (!username) {
 
 document.getElementById('username-display').textContent = username;
 
+const selected = new Set();
+const deleteBtn = document.getElementById('delete-selected');
+
 async function loadFiles() {
     const formData = new FormData();
     formData.append('username', username);
     const res = await fetch('/list', { method: 'POST', body: formData });
     const json = await res.json();
-    const list = document.getElementById('file-list');
-    list.innerHTML = '';
+    const tbody = document.querySelector('#file-table tbody');
+    tbody.innerHTML = '';
+    selected.clear();
+    deleteBtn.disabled = true;
     json.files.forEach(file => {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
-        li.textContent = file;
-        list.appendChild(li);
+        const tr = document.createElement('tr');
+
+        const cbTd = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = file.title;
+        cb.addEventListener('change', () => {
+            if (cb.checked) {
+                selected.add(cb.value);
+            } else {
+                selected.delete(cb.value);
+            }
+            deleteBtn.disabled = selected.size === 0;
+        });
+        cbTd.appendChild(cb);
+        tr.appendChild(cbTd);
+
+        const titleTd = document.createElement('td');
+        titleTd.textContent = file.title;
+        tr.appendChild(titleTd);
+
+        const addedTd = document.createElement('td');
+        addedTd.textContent = file.added;
+        tr.appendChild(addedTd);
+
+        const extTd = document.createElement('td');
+        extTd.textContent = file.extension;
+        tr.appendChild(extTd);
+
+        const descTd = document.createElement('td');
+        descTd.textContent = file.description;
+        tr.appendChild(descTd);
+
+        const sizeTd = document.createElement('td');
+        sizeTd.textContent = formatSize(file.size);
+        tr.appendChild(sizeTd);
+
+        tbody.appendChild(tr);
     });
+}
+
+deleteBtn.addEventListener('click', async () => {
+    for (const filename of selected) {
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('filename', filename);
+        await fetch('/delete', { method: 'POST', body: formData });
+    }
+    await loadFiles();
+});
+
+function formatSize(bytes) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit++;
+    }
+    return size.toFixed(1) + ' ' + units[unit];
 }
 
 loadFiles();
