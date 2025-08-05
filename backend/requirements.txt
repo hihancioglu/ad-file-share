@@ -1,6 +1,5 @@
-fastapi
-uvicorn
-python-multipart
+flask
+flask-cors
 ldap3
 psycopg2-binary
 sqlalchemy
