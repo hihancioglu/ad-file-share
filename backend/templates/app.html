@@ -13,7 +13,10 @@
             <ul class="nav flex-column">
                 <li class="nav-item"><a class="nav-link" href="#upload">Yükle</a></li>
                 <li class="nav-item"><a class="nav-link" href="#files">Dosyalarım</a></li>
-                <li class="nav-item"><a class="nav-link" href="#teams">Ekipler</a></li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#teams">Ekipler</a>
+                    <ul id="team-menu" class="nav flex-column ms-3"></ul>
+                </li>
             </ul>
         </div>
     </nav>
@@ -35,7 +38,8 @@
 
         <section id="files">
             <h2>Dosyalarım</h2>
-            <button id="delete-selected" class="btn btn-danger mb-2" disabled>Sil</button>
+            <button id="delete-selected" class="btn btn-danger mb-2 me-2" disabled>Sil</button>
+            <button id="add-to-team" class="btn btn-secondary mb-2" disabled>Gruba Ekle</button>
             <table id="file-table" class="table">
                 <thead>
                     <tr>
@@ -55,12 +59,30 @@
             <h2>Ekipler</h2>
             <form id="team-form" class="mb-3">
                 <input type="text" id="team-name" class="form-control mb-2" placeholder="Ekip adı" required>
-                <input type="text" id="team-members" class="form-control mb-2" placeholder="Üyeler (virgülle ayır)">
+                <select id="team-members" class="form-select mb-2" multiple></select>
+                <button id="load-users" type="button" class="btn btn-outline-secondary mb-2">Kullanıcı Ekle</button>
                 <button class="btn btn-primary" type="submit">Oluştur</button>
             </form>
             <ul id="team-list" class="list-group"></ul>
         </section>
     </div>
+</div>
+
+<div class="modal fade" id="teamModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Ekip Seç</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <select id="team-select" class="form-select"></select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="team-modal-add">Ekle</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -74,6 +96,14 @@ document.getElementById('username-display').textContent = username;
 
 const selected = new Set();
 const deleteBtn = document.getElementById('delete-selected');
+const addToTeamBtn = document.getElementById('add-to-team');
+let teams = [];
+
+function updateActionButtons() {
+    const disabled = selected.size === 0;
+    deleteBtn.disabled = disabled;
+    addToTeamBtn.disabled = disabled;
+}
 
 async function loadFiles() {
     const formData = new FormData();
@@ -83,7 +113,7 @@ async function loadFiles() {
     const tbody = document.querySelector('#file-table tbody');
     tbody.innerHTML = '';
     selected.clear();
-    deleteBtn.disabled = true;
+    updateActionButtons();
     json.files.forEach(file => {
         const tr = document.createElement('tr');
 
@@ -97,7 +127,7 @@ async function loadFiles() {
             } else {
                 selected.delete(cb.value);
             }
-            deleteBtn.disabled = selected.size === 0;
+            updateActionButtons();
         });
         cbTd.appendChild(cb);
         tr.appendChild(cbTd);
@@ -136,6 +166,31 @@ deleteBtn.addEventListener('click', async () => {
     await loadFiles();
 });
 
+addToTeamBtn.addEventListener('click', () => {
+    const select = document.getElementById('team-select');
+    select.innerHTML = '';
+    teams.forEach(team => {
+        const opt = document.createElement('option');
+        opt.value = team.id;
+        opt.textContent = team.name;
+        select.appendChild(opt);
+    });
+    const modal = new bootstrap.Modal(document.getElementById('teamModal'));
+    modal.show();
+});
+
+document.getElementById('team-modal-add').addEventListener('click', async () => {
+    const teamId = document.getElementById('team-select').value;
+    const data = new FormData();
+    data.append('username', username);
+    data.append('team_id', teamId);
+    for (const f of selected) {
+        data.append('filenames', f);
+    }
+    await fetch('/teams/add_files', { method: 'POST', body: data });
+    bootstrap.Modal.getInstance(document.getElementById('teamModal')).hide();
+});
+
 function formatSize(bytes) {
     const units = ['B', 'KB', 'MB', 'GB'];
     let size = bytes;
@@ -156,7 +211,19 @@ async function loadTeams() {
     const json = await res.json();
     const list = document.getElementById('team-list');
     list.innerHTML = '';
-    json.teams.forEach(team => {
+    teams = json.teams;
+    const menu = document.getElementById('team-menu');
+    menu.innerHTML = '';
+    teams.forEach(team => {
+        const menuItem = document.createElement('li');
+        menuItem.className = 'nav-item';
+        const link = document.createElement('a');
+        link.className = 'nav-link';
+        link.href = '#teams';
+        link.textContent = team.name;
+        menuItem.appendChild(link);
+        menu.appendChild(menuItem);
+
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
         li.textContent = `${team.name} (${team.members.join(', ')})`;
@@ -181,7 +248,8 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
     const formData = new FormData();
     formData.append('username', username);
     formData.append('team_name', document.getElementById('team-name').value);
-    formData.append('members', document.getElementById('team-members').value);
+    const members = Array.from(document.getElementById('team-members').selectedOptions).map(o => o.value).join(',');
+    formData.append('members', members);
     const res = await fetch('/teams/create', { method: 'POST', body: formData });
     const json = await res.json();
     if (json.success) {
@@ -191,6 +259,19 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 });
 
 loadTeams();
+
+document.getElementById('load-users').addEventListener('click', async () => {
+    const res = await fetch('/users/list');
+    const json = await res.json();
+    const select = document.getElementById('team-members');
+    select.innerHTML = '';
+    json.users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        select.appendChild(opt);
+    });
+});
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
