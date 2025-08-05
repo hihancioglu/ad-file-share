@@ -105,13 +105,23 @@ def login():
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
-    file = request.files["file"]
+    files = request.files.getlist("files")
+    if not files:
+        file = request.files.get("file")
+        files = [file] if file else []
+
     username = request.form.get("username")
     user_dir = os.path.join(DATA_DIR, username)
     os.makedirs(user_dir, exist_ok=True)
-    file_path = os.path.join(user_dir, file.filename)
-    file.save(file_path)
-    return jsonify(success=True, filename=file.filename)
+
+    uploaded = []
+    for file in files:
+        if file and file.filename:
+            file_path = os.path.join(user_dir, file.filename)
+            file.save(file_path)
+            uploaded.append(file.filename)
+
+    return jsonify(success=True, filenames=uploaded)
 
 
 @app.route("/list", methods=["POST"])

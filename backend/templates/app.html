@@ -25,12 +25,10 @@
 
         <section id="upload" class="mb-4">
             <h2>Dosya Yükle</h2>
-            <form id="upload-form" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <input type="file" class="form-control" name="file" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Yükle</button>
-            </form>
+            <div id="drop-zone" class="mb-3 border border-primary rounded p-5 text-center" style="cursor: pointer;">
+                Dosyaları buraya sürükleyin veya tıklayın
+                <input type="file" id="file-input" name="files" multiple hidden>
+            </div>
             <div id="upload-result" class="mt-2"></div>
         </section>
 
@@ -67,20 +65,40 @@ async function loadFiles() {
 
 loadFiles();
 
-document.getElementById('upload-form').addEventListener('submit', async (e) => {
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
+    dropZone.classList.add('bg-light');
+});
+dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('bg-light');
+});
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('bg-light');
+    handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+async function handleFiles(files) {
+    const formData = new FormData();
+    for (const file of files) {
+        formData.append('files', file);
+    }
     formData.append('username', username);
     const res = await fetch('/upload', { method: 'POST', body: formData });
     const json = await res.json();
     const result = document.getElementById('upload-result');
     if (json.success) {
-        result.innerHTML = '<div class="alert alert-success">Yüklendi</div>';
+        result.innerHTML = '<div class="alert alert-success">' + json.filenames.join(', ') + ' yüklendi</div>';
         loadFiles();
     } else {
         result.innerHTML = '<div class="alert alert-danger">' + (json.error || 'Hata') + '</div>';
     }
-});
+}
 </script>
 </body>
 </html>
