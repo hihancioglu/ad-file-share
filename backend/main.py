@@ -161,7 +161,23 @@ def list_files():
     user_dir = os.path.join(DATA_DIR, username)
     if not os.path.exists(user_dir):
         return jsonify(files=[])
-    files = os.listdir(user_dir)
+
+    files = []
+    for filename in os.listdir(user_dir):
+        file_path = os.path.join(user_dir, filename)
+        stat = os.stat(file_path)
+        files.append(
+            {
+                "title": filename,
+                "added": datetime.fromtimestamp(stat.st_mtime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                "extension": os.path.splitext(filename)[1].lstrip("."),
+                "description": "",
+                "size": stat.st_size,
+            }
+        )
+
     return jsonify(files=files)
 
 
