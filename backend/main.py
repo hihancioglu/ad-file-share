@@ -19,6 +19,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
+LDAP_USER = os.getenv("LDAP_USER")
+LDAP_PASSWORD = os.getenv("LDAP_PASSWORD")
+LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "")
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -60,6 +63,15 @@ class TeamMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     team_id = Column(Integer, ForeignKey("teams.id"), index=True)
     username = Column(String, index=True)
+
+
+class TeamFile(Base):
+    __tablename__ = "team_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), index=True)
+    username = Column(String, index=True)
+    filename = Column(String)
 
 
 Base.metadata.create_all(engine)
@@ -117,6 +129,33 @@ def login():
         return jsonify(success=True, username=username)
     except Exception as e:
         return jsonify(success=False, error=str(e))
+
+
+@app.route("/users/list", methods=["GET"])
+def list_users():
+    query = request.args.get("q", "")
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return jsonify(success=False, error="LDAP bağlantısı başarısız")
+        search_filter = f"(&(objectClass=user)(sAMAccountName=*{query}*))"
+        conn.search(LDAP_BASE_DN, search_filter, attributes=["sAMAccountName"])
+        users = [e.sAMAccountName.value for e in conn.entries]
+        return jsonify(users=users)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
 
 
 @app.route("/upload", methods=["POST"])
@@ -351,6 +390,28 @@ def list_teams():
                 }
             )
         return jsonify(teams=data)
+    finally:
+        db.close()
+
+
+@app.route("/teams/add_files", methods=["POST"])
+def add_files_to_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    filenames = request.form.getlist("filenames")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        if not membership:
+            return jsonify(success=False, error="Yetkiniz yok")
+        for fname in filenames:
+            db.add(TeamFile(team_id=team_id, username=username, filename=fname))
+        db.commit()
+        return jsonify(success=True)
     finally:
         db.close()
 
