@@ -161,6 +161,73 @@ def list_users():
             pass
 
 
+def _list_users_in_dn(conn, dn: str):
+    conn.search(
+        dn,
+        "(objectClass=user)",
+        search_scope=ldap3.LEVEL,
+        attributes=["sAMAccountName", "givenName", "sn"],
+    )
+    users = []
+    for e in conn.entries:
+        username = getattr(e, "sAMAccountName", None)
+        given = getattr(e, "givenName", None)
+        sn = getattr(e, "sn", None)
+        users.append(
+            {
+                "username": username.value if username else "",
+                "givenName": given.value if given else "",
+                "sn": sn.value if sn else "",
+            }
+        )
+    return users
+
+
+def _build_ou_tree(conn, base_dn: str):
+    conn.search(
+        base_dn,
+        "(objectClass=organizationalUnit)",
+        search_scope=ldap3.LEVEL,
+        attributes=["ou"],
+    )
+    entries = list(conn.entries)
+    tree = []
+    for entry in entries:
+        name = entry.ou.value if "ou" in entry else ""
+        dn = entry.entry_dn
+        node = {
+            "name": name,
+            "users": _list_users_in_dn(conn, dn),
+            "children": _build_ou_tree(conn, dn),
+        }
+        tree.append(node)
+    return tree
+
+
+@app.route("/users/tree", methods=["GET"])
+def users_tree():
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return jsonify(success=False, error="LDAP bağlantısı başarısız")
+        tree = _build_ou_tree(conn, LDAP_BASE_DN)
+        return jsonify(tree=tree)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
 @app.route("/upload", methods=["POST"])
 def upload_file():
     """Upload endpoint supporting chunked uploads.
