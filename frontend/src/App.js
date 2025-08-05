@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
@@ -128,41 +129,52 @@ function App() {
 
   if (!loggedIn) {
     return (
-      <div style={{ maxWidth: 300, margin: "50px auto", padding: 30, border: "1px solid #ccc", borderRadius: 8 }}>
+      <div className="container">
         <h2>AD Girişi</h2>
         <form onSubmit={handleLogin}>
-          <input placeholder="Kullanıcı adı" value={username} onChange={e => setUsername(e.target.value)} style={{ width: "100%", marginBottom: 8 }} /><br />
-          <input placeholder="Şifre" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: "100%", marginBottom: 12 }} /><br />
-          <button type="submit" style={{ width: "100%" }}>Giriş</button>
+          <input
+            placeholder="Kullanıcı adı"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="text-input"
+          /><br />
+          <input
+            placeholder="Şifre"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="text-input"
+          /><br />
+          <button type="submit" className="btn">Giriş</button>
         </form>
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: "50px auto", padding: 30, border: "1px solid #ccc", borderRadius: 8 }}>
+    <div className="container">
       <h2>Dosya Yükle</h2>
       <form onSubmit={handleUpload}>
         <input type="file" onChange={e => setSelectedFile(e.target.files[0])} /><br /><br />
-        <button type="submit">Yükle</button>
+        <button type="submit" className="btn">Yükle</button>
       </form>
-      <div style={{ marginTop: 24 }}>
+      <div className="file-section">
         <h3>Yüklediğiniz Dosyalar:</h3>
         <ul>
           {userFiles.map(file => (
-            <li key={file} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ cursor: 'pointer', color: '#2062c5' }} onClick={() => handleDownload(file)}>{file}</span>
-              <button style={{ marginLeft: 10 }} onClick={() => handleDelete(file)}>Sil</button>
+            <li key={file} className="file-item">
+              <span className="file-link" onClick={() => handleDownload(file)}>{file}</span>
+              <button onClick={() => handleDelete(file)}>Sil</button>
               <button onClick={() => handleShare(file)}>Paylaş</button>
               {sharedLinks[file] && (
-                <a href={sharedLinks[file]} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8 }}>
+                <a href={sharedLinks[file]} target="_blank" rel="noopener noreferrer">
                   Link
                 </a>
               )}
             </li>
           ))}
         </ul>
-        <button onClick={() => setLoggedIn(false)}>Çıkış</button>
+        <button className="btn" onClick={() => setLoggedIn(false)}>Çıkış</button>
       </div>
     </div>
   );
