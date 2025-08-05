@@ -78,7 +78,12 @@ def log_download(username: str, filename: str):
 
 @app.route("/", methods=["GET"])
 def read_index():
-    return render_template("index.html")
+    return render_template("login.html")
+
+
+@app.route("/app", methods=["GET"])
+def read_app():
+    return render_template("app.html")
 
 
 @app.route("/login", methods=["POST"])
