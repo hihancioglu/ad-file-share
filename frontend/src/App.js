@@ -10,6 +10,9 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [userFiles, setUserFiles] = useState([]);
   const [sharedLinks, setSharedLinks] = useState({});
+  const [view, setView] = useState('home');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [stats, setStats] = useState({ file_count: 0, download_count: 0, download_logs: [] });
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -24,6 +27,8 @@ function App() {
     const data = await res.json();
     if (data.success) {
       setLoggedIn(true);
+      setView('home');
+      fetchStats();
     } else {
       alert("Giriş başarısız: " + data.error);
     }
@@ -44,7 +49,7 @@ function App() {
     if (data.success) {
       alert("Yükleme başarılı: " + data.filename);
       setSelectedFile(null);
-      fetchFiles();
+      fetchStats();
     } else {
       alert("Hata: " + data.error);
     }
@@ -61,6 +66,18 @@ function App() {
     const data = await res.json();
     setUserFiles(data.files || []);
     setSharedLinks({});
+  };
+
+  const fetchStats = async () => {
+    const formData = new FormData();
+    formData.append("username", username);
+
+    const res = await fetch(`${API_URL}/stats`, {
+      method: "POST",
+      body: formData
+    });
+    const data = await res.json();
+    setStats(data);
   };
 
   const handleDownload = async (filename) => {
@@ -81,6 +98,7 @@ function App() {
       a.download = filename;
       a.click();
       window.URL.revokeObjectURL(url);
+      fetchStats();
     } else {
       alert("İndirme başarısız!");
     }
@@ -100,6 +118,7 @@ function App() {
     if (data.success) {
       alert("Dosya silindi");
       fetchFiles();
+      fetchStats();
     } else {
       alert("Silinemedi: " + data.error);
     }
@@ -123,9 +142,14 @@ function App() {
   };
 
   useEffect(() => {
-    if (loggedIn) fetchFiles();
+    if (loggedIn && view === 'files') {
+      fetchFiles();
+    }
+    if (loggedIn && view === 'home') {
+      fetchStats();
+    }
     // eslint-disable-next-line
-  }, [loggedIn]);
+  }, [view, loggedIn]);
 
   if (!loggedIn) {
     return (
@@ -152,32 +176,65 @@ function App() {
   }
 
   return (
-    <div className="container">
-      <h2>Dosya Yükle</h2>
-      <form onSubmit={handleUpload}>
-        <input type="file" onChange={e => setSelectedFile(e.target.files[0])} /><br /><br />
-        <button type="submit" className="btn">Yükle</button>
-      </form>
-      <div className="file-section">
-        <h3>Yüklediğiniz Dosyalar:</h3>
-        <ul>
-          {userFiles.map(file => (
-            <li key={file} className="file-item">
-              <span className="file-link" onClick={() => handleDownload(file)}>{file}</span>
-              <button onClick={() => handleDelete(file)}>Sil</button>
-              <button onClick={() => handleShare(file)}>Paylaş</button>
-              {sharedLinks[file] && (
-                <a href={sharedLinks[file]} target="_blank" rel="noopener noreferrer">
-                  Link
-                </a>
-              )}
-            </li>
-          ))}
-        </ul>
-        <button className="btn" onClick={() => setLoggedIn(false)}>Çıkış</button>
+    <div>
+      <div className="hamburger" onClick={() => setMenuOpen(!menuOpen)}>☰</div>
+      {menuOpen && (
+        <div className="menu">
+          <button onClick={() => { setView('home'); setMenuOpen(false); }}>Anasayfa</button>
+          <button onClick={() => { setView('upload'); setMenuOpen(false); }}>Yükle</button>
+          <button onClick={() => { setView('files'); setMenuOpen(false); }}>Dosyalarım</button>
+          <button onClick={() => { setLoggedIn(false); setMenuOpen(false); }}>Çıkış</button>
+        </div>
+      )}
+
+      <div className="container">
+        {view === 'home' && (
+          <div className="stats">
+            <h2>İstatistikler</h2>
+            <p>Toplam dosya: {stats.file_count}</p>
+            <p>Toplam indirme: {stats.download_count}</p>
+            <h3>İndirme Logları:</h3>
+            <ul>
+              {stats.download_logs && stats.download_logs.map((log, idx) => (
+                <li key={idx}>{log.timestamp} - {log.filename}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {view === 'upload' && (
+          <div>
+            <h2>Dosya Yükle</h2>
+            <form onSubmit={handleUpload}>
+              <input type="file" onChange={e => setSelectedFile(e.target.files[0])} /><br /><br />
+              <button type="submit" className="btn">Yükle</button>
+            </form>
+          </div>
+        )}
+
+        {view === 'files' && (
+          <div className="file-section">
+            <h2>Dosyalarım</h2>
+            <ul>
+              {userFiles.map(file => (
+                <li key={file} className="file-item">
+                  <span className="file-link" onClick={() => handleDownload(file)}>{file}</span>
+                  <button onClick={() => handleDelete(file)}>Sil</button>
+                  <button onClick={() => handleShare(file)}>Paylaş</button>
+                  {sharedLinks[file] && (
+                    <a href={sharedLinks[file]} target="_blank" rel="noopener noreferrer">
+                      Link
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default App;
+
