@@ -1,12 +1,13 @@
 import os
 import secrets
-import json
 from datetime import datetime
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import ldap3
 from dotenv import load_dotenv
+from sqlalchemy import Column, DateTime, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
@@ -26,39 +27,64 @@ os.makedirs(DATA_DIR, exist_ok=True)
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 
-SHARE_LINKS_FILE = os.path.join(DATA_DIR, "share_links.json")
-DOWNLOAD_LOGS_FILE = os.path.join(DATA_DIR, "download_logs.json")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://admin:secret@postgres:5432/filesharedb",
+)
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
 
 
-def load_json(path):
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return json.load(f)
-    return {}
+class ShareLink(Base):
+    __tablename__ = "share_links"
+
+    token = Column(String, primary_key=True, index=True)
+    username = Column(String, index=True)
+    filename = Column(String)
 
 
-def save_json(path, data):
-    with open(path, "w") as f:
-        json.dump(data, f)
+class DownloadLog(Base):
+    __tablename__ = "download_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    filename = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
 
 
-# Kalıcı public paylaşım linklerini tutmak için { token: {username, filename} }
-SHARE_LINKS = load_json(SHARE_LINKS_FILE)
-# İndirme loglarını tutmak için { username: [ {filename, timestamp} ] }
-DOWNLOAD_LOGS = load_json(DOWNLOAD_LOGS_FILE)
+Base.metadata.create_all(engine)
 
 
 def find_share_token(username: str, filename: str):
-    for token, info in SHARE_LINKS.items():
-        if info["username"] == username and info["filename"] == filename:
-            return token
-    return None
+    db = SessionLocal()
+    try:
+        link = (
+            db.query(ShareLink)
+            .filter_by(username=username, filename=filename)
+            .first()
+        )
+        return link.token if link else None
+    finally:
+        db.close()
+
+
+def create_share_link(token: str, username: str, filename: str):
+    db = SessionLocal()
+    try:
+        db.add(ShareLink(token=token, username=username, filename=filename))
+        db.commit()
+    finally:
+        db.close()
 
 
 def log_download(username: str, filename: str):
-    logs = DOWNLOAD_LOGS.setdefault(username, [])
-    logs.append({"filename": filename, "timestamp": datetime.utcnow().isoformat()})
-    save_json(DOWNLOAD_LOGS_FILE, DOWNLOAD_LOGS)
+    db = SessionLocal()
+    try:
+        db.add(DownloadLog(username=username, filename=filename))
+        db.commit()
+    finally:
+        db.close()
 
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...)):
@@ -112,18 +138,21 @@ def share_file(username: str = Form(...), filename: str = Form(...)):
     token = find_share_token(username, filename)
     if token is None:
         token = secrets.token_urlsafe(16)
-        SHARE_LINKS[token] = {"username": username, "filename": filename}
-        save_json(SHARE_LINKS_FILE, SHARE_LINKS)
+        create_share_link(token, username, filename)
     # Public link örneği: /public/{token}
     return {"success": True, "link": f"/public/{token}"}
 
 @app.get("/public/{token}")
 def public_download(token: str):
-    item = SHARE_LINKS.get(token)
-    if not item:
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+    finally:
+        db.close()
+    if not link:
         return {"success": False, "error": "Link geçersiz"}
-    username = item["username"]
-    filename = item["filename"]
+    username = link.username
+    filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
@@ -136,9 +165,17 @@ def public_download(token: str):
 def stats(username: str = Form(...)):
     user_dir = os.path.join(DATA_DIR, username)
     file_count = len(os.listdir(user_dir)) if os.path.exists(user_dir) else 0
-    logs = DOWNLOAD_LOGS.get(username, [])
+    db = SessionLocal()
+    try:
+        logs = db.query(DownloadLog).filter_by(username=username).all()
+        logs_data = [
+            {"filename": l.filename, "timestamp": l.timestamp.isoformat()}
+            for l in logs
+        ]
+    finally:
+        db.close()
     return {
         "file_count": file_count,
-        "download_count": len(logs),
-        "download_logs": logs,
+        "download_count": len(logs_data),
+        "download_logs": logs_data,
     }
