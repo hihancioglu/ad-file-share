@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Env/config
+.env
+.env.*
+*.log
+
+# Data, DB, Volumes
+data/
+postgres/
+*.sqlite*
+
+# VSCode/IDE
+.vscode/
+.idea/
+*.iml
+
+# Node/React
+node_modules/
+build/
+dist/
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+
+# System/Mac
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid

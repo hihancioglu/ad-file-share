@@ -1,0 +1,30 @@
+version: "3.8"
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8080:8000"
+    restart: always
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "3010:80"
+    restart: always
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: filesharedb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
