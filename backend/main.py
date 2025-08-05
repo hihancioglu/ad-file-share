@@ -105,14 +105,45 @@ def login():
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
-    files = request.files.getlist("files")
-    if not files:
-        file = request.files.get("file")
-        files = [file] if file else []
+    """Upload endpoint supporting chunked uploads.
+
+    Chunks are uploaded with fields:
+    - username: owner of the file
+    - filename: original file name
+    - chunk_index: index of this chunk (0-based)
+    - total_chunks: total number of chunks
+    - file: binary data for this chunk
+
+    Legacy single-request uploads are still supported for small files.
+    """
 
     username = request.form.get("username")
     user_dir = os.path.join(DATA_DIR, username)
     os.makedirs(user_dir, exist_ok=True)
+
+    # Parameters for chunked upload
+    filename = request.form.get("filename")
+    chunk = request.files.get("file")
+    chunk_index = request.form.get("chunk_index")
+    total_chunks = request.form.get("total_chunks")
+
+    if filename and chunk and chunk_index is not None and total_chunks:
+        chunk_index = int(chunk_index)
+        total_chunks = int(total_chunks)
+        file_path = os.path.join(user_dir, filename)
+        mode = "wb" if chunk_index == 0 else "ab"
+        with open(file_path, mode) as f:
+            f.write(chunk.read())
+        # If this was the last chunk, respond with completion info
+        if chunk_index + 1 == total_chunks:
+            return jsonify(success=True, filenames=[filename])
+        return jsonify(success=True, chunk_index=chunk_index)
+
+    # Fallback to legacy upload for already assembled files
+    files = request.files.getlist("files")
+    if not files:
+        file = request.files.get("file")
+        files = [file] if file else []
 
     uploaded = []
     for file in files:
