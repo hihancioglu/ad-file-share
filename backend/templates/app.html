@@ -282,7 +282,7 @@ document.getElementById('load-users').addEventListener('click', async () => {
     const json = await res.json();
     const container = document.getElementById('ou-tree');
     container.innerHTML = '';
-    renderTree(json.tree, container);
+    renderTree(json.tree, container, username);
     const modal = new bootstrap.Modal(document.getElementById('userModal'));
     modal.show();
 });
@@ -302,11 +302,27 @@ document.getElementById('user-modal-add').addEventListener('click', () => {
     bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
 });
 
-function renderTree(nodes, parent) {
+function nodeContainsUser(node, username) {
+    if (node.users && node.users.some(u => u.username === username)) {
+        return true;
+    }
+    if (node.children) {
+        return node.children.some(child => nodeContainsUser(child, username));
+    }
+    return false;
+}
+
+function renderTree(nodes, parent, username) {
     const ul = document.createElement('ul');
     nodes.forEach(node => {
+        if (/pc/i.test(node.name)) {
+            return;
+        }
         const li = document.createElement('li');
-        li.textContent = node.name;
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = node.name;
+        details.appendChild(summary);
         if (node.users && node.users.length > 0) {
             const userUl = document.createElement('ul');
             node.users.forEach(u => {
@@ -322,11 +338,15 @@ function renderTree(nodes, parent) {
                 userLi.appendChild(label);
                 userUl.appendChild(userLi);
             });
-            li.appendChild(userUl);
+            details.appendChild(userUl);
         }
         if (node.children && node.children.length > 0) {
-            renderTree(node.children, li);
+            renderTree(node.children, details, username);
         }
+        if (nodeContainsUser(node, username)) {
+            details.open = true;
+        }
+        li.appendChild(details);
         ul.appendChild(li);
     });
     parent.appendChild(ul);

@@ -194,6 +194,8 @@ def _build_ou_tree(conn, base_dn: str):
     tree = []
     for entry in entries:
         name = entry.ou.value if "ou" in entry else ""
+        if "pc" in name.lower():
+            continue
         dn = entry.entry_dn
         node = {
             "name": name,
