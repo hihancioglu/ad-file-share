@@ -9,14 +9,6 @@ services:
       - "8080:8000"
     restart: always
 
-  frontend:
-    build: ./frontend
-    depends_on:
-      - backend
-    ports:
-      - "3010:80"
-    restart: always
-
   postgres:
     image: postgres:15
     environment:

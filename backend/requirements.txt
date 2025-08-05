@@ -7,4 +7,5 @@ sqlalchemy
 python-dotenv
 passlib
 pycryptodome
+jinja2
 

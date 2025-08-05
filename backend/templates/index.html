@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Share</title>
+</head>
+<body>
+    <h1>File Share</h1>
+    <h2>Login</h2>
+    <form action="/login" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <label>Password: <input type="password" name="password" /></label><br />
+        <button type="submit">Login</button>
+    </form>
+
+    <h2>Upload</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <input type="file" name="file" /><br />
+        <button type="submit">Upload</button>
+    </form>
+
+    <h2>List Files</h2>
+    <form action="/list" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <button type="submit">List</button>
+    </form>
+
+    <h2>Download File</h2>
+    <form action="/download" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <label>Filename: <input type="text" name="filename" /></label><br />
+        <button type="submit">Download</button>
+    </form>
+
+    <h2>Delete File</h2>
+    <form action="/delete" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <label>Filename: <input type="text" name="filename" /></label><br />
+        <button type="submit">Delete</button>
+    </form>
+
+    <h2>Share Link</h2>
+    <form action="/share" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <label>Filename: <input type="text" name="filename" /></label><br />
+        <button type="submit">Share</button>
+    </form>
+
+    <h2>Stats</h2>
+    <form action="/stats" method="post">
+        <label>Username: <input type="text" name="username" /></label><br />
+        <button type="submit">Stats</button>
+    </form>
+</body>
+</html>

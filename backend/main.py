@@ -1,9 +1,10 @@
 import os
 import secrets
 from datetime import datetime
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 import ldap3
 from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, Integer, String, create_engine
@@ -20,6 +21,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+templates = Jinja2Templates(directory="templates")
+
+@app.get("/", response_class=HTMLResponse)
+def read_index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)

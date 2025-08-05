@@ -20,14 +20,6 @@ postgres/
 .idea/
 *.iml
 
-# Node/React
-node_modules/
-build/
-dist/
-frontend/node_modules/
-frontend/build/
-frontend/dist/
-
 # System/Mac
 .DS_Store
 Thumbs.db
