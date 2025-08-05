@@ -11,3 +11,11 @@ docker-compose up --build
 ```
 
 The application will be available at `http://localhost:8080/`.
+
+## Configuration
+
+The backend reads LDAP settings from environment variables. To customize how user
+names are searched, set `LDAP_SEARCH_FILTER` in the environment. The string
+should contain a `{query}` placeholder that will be replaced with the incoming
+search text. By default the application uses
+`(&(objectClass=user)(sAMAccountName=*{query}*))`.

@@ -22,6 +22,9 @@ LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 LDAP_USER = os.getenv("LDAP_USER")
 LDAP_PASSWORD = os.getenv("LDAP_PASSWORD")
 LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "")
+LDAP_SEARCH_FILTER = os.getenv(
+    "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
+)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -145,7 +148,7 @@ def list_users():
         )
         if not conn.bind():
             return jsonify(success=False, error="LDAP bağlantısı başarısız")
-        search_filter = f"(&(objectClass=user)(sAMAccountName=*{query}*))"
+        search_filter = LDAP_SEARCH_FILTER.format(query=query)
         conn.search(LDAP_BASE_DN, search_filter, attributes=["sAMAccountName"])
         users = [e.sAMAccountName.value for e in conn.entries]
         return jsonify(users=users)
