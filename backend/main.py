@@ -6,7 +6,16 @@ from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 import ldap3
 from dotenv import load_dotenv
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, create_engine
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Integer,
+    String,
+    ForeignKey,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
@@ -89,6 +98,18 @@ class UserShare(Base):
 
 
 Base.metadata.create_all(engine)
+
+
+def add_missing_columns():
+    inspector = inspect(engine)
+
+    team_cols = [col["name"] for col in inspector.get_columns("team_files")]
+    if "expires_at" not in team_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE team_files ADD COLUMN expires_at TIMESTAMP"))
+
+
+add_missing_columns()
 
 
 def get_user_names(username: str):
