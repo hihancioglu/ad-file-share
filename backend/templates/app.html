@@ -161,6 +161,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <div class="alert alert-info">Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.</div>
         <select id="share-expiry" class="form-select">
           <option value="1">1 gün</option>
           <option value="7" selected>7 gün</option>
@@ -318,6 +319,12 @@ async function loadFiles() {
                 setTimeout(() => msg.remove(), 2000);
             });
             titleTd.appendChild(linkBtn);
+
+            const statusBtn = document.createElement('button');
+            statusBtn.className = 'btn btn-sm ms-2 ' + (file.approved ? 'btn-success' : 'btn-warning');
+            statusBtn.textContent = file.approved ? 'Onaylandı' : 'Onay bekliyor';
+            statusBtn.disabled = true;
+            titleTd.appendChild(statusBtn);
         }
         tr.appendChild(titleTd);
 
@@ -343,6 +350,10 @@ async function loadFiles() {
 
         tbody.appendChild(tr);
     });
+
+    if (json.files.some(f => f.link && !f.approved)) {
+        setTimeout(loadFiles, 5000);
+    }
 }
 
 async function loadIncoming() {

@@ -1,5 +1,6 @@
 import os
 import secrets
+import smtplib
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     ForeignKey,
+    Boolean,
     create_engine,
     inspect,
     text,
@@ -35,6 +37,12 @@ LDAP_SEARCH_FILTER = os.getenv(
     "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
 )
 
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "25"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@example.com")
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://admin:secret@postgres:5432/filesharedb",
@@ -51,6 +59,7 @@ class ShareLink(Base):
     username = Column(String, index=True)
     filename = Column(String)
     expires_at = Column(DateTime)
+    approved = Column(Boolean, default=False)
 
 
 class DownloadLog(Base):
@@ -122,6 +131,13 @@ def add_missing_columns():
     if "expires_at" not in share_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE share_links ADD COLUMN expires_at TIMESTAMP"))
+    if "approved" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE share_links ADD COLUMN approved BOOLEAN DEFAULT FALSE"
+                )
+            )
 
 
 add_missing_columns()
@@ -165,6 +181,63 @@ def get_full_name(username: str):
     return full_name or username
 
 
+def get_manager_email(username: str):
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return ""
+        search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
+        conn.search(LDAP_BASE_DN, search_filter, attributes=["manager"])
+        if not conn.entries:
+            return ""
+        manager_dn = getattr(conn.entries[0], "manager", None)
+        if not manager_dn:
+            return ""
+        conn.search(manager_dn.value, "(objectClass=user)", attributes=["mail"])
+        if conn.entries:
+            mail_attr = getattr(conn.entries[0], "mail", None)
+            return mail_attr.value if mail_attr else ""
+    except Exception:
+        return ""
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+    return ""
+
+
+def send_approval_email(username: str, filename: str, token: str):
+    manager_email = get_manager_email(username)
+    if not manager_email or not SMTP_SERVER:
+        return
+    approval_link = f"{request.host_url}share/approve/{token}"
+    subject = "Dosya Paylaşımı Onayı"
+    body = (
+        f"{username} kullanıcısı '{filename}' dosyasını paylaşmak istiyor.\n"
+        f"Onaylamak için {approval_link} adresine tıklayın."
+    )
+    msg = f"Subject: {subject}\n\n{body}"
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            if SMTP_USER and SMTP_PASSWORD:
+                try:
+                    server.starttls()
+                except Exception:
+                    pass
+                server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, [manager_email], msg)
+    except Exception:
+        pass
+
+
 def find_share_token(username: str, filename: str):
     db = SessionLocal()
     try:
@@ -183,7 +256,11 @@ def create_share_link(token: str, username: str, filename: str, expires_at=None)
     try:
         db.add(
             ShareLink(
-                token=token, username=username, filename=filename, expires_at=expires_at
+                token=token,
+                username=username,
+                filename=filename,
+                expires_at=expires_at,
+                approved=False,
             )
         )
         db.commit()
@@ -426,7 +503,11 @@ def list_files():
         }
         now = datetime.utcnow()
         links = {
-            l.filename: {"token": l.token, "expires_at": l.expires_at}
+            l.filename: {
+                "token": l.token,
+                "expires_at": l.expires_at,
+                "approved": l.approved,
+            }
             for l in db.query(ShareLink)
             .filter_by(username=username)
             .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
@@ -443,6 +524,7 @@ def list_files():
         link_info = links.get(filename, {})
         token = link_info.get("token")
         link_exp = link_info.get("expires_at")
+        approved = link_info.get("approved", False)
         files.append(
             {
                 "title": filename,
@@ -455,6 +537,7 @@ def list_files():
                 "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
                 "public_expires_at": link_exp.strftime("%Y-%m-%d") if link_exp else "",
                 "link": f"/public/{token}" if token else "",
+                "approved": approved,
             }
         )
 
@@ -503,6 +586,7 @@ def share_file():
         if days and int(days) > 0:
             expires_at = datetime.utcnow() + timedelta(days=int(days))
         create_share_link(token, username, filename, expires_at)
+        send_approval_email(username, filename, token)
     return jsonify(success=True, link=f"/public/{token}")
 
 
@@ -512,6 +596,20 @@ def delete_share():
     filename = request.form.get("filename")
     delete_share_link(username, filename)
     return jsonify(success=True)
+
+
+@app.route("/share/approve/<token>", methods=["GET"])
+def approve_share(token):
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+        if not link:
+            return "Geçersiz bağlantı"
+        link.approved = True
+        db.commit()
+        return "Paylaşım onaylandı"
+    finally:
+        db.close()
 
 
 @app.route("/share/user", methods=["POST"])
@@ -642,6 +740,8 @@ def public_page(token):
         db.close()
     if not link:
         return render_template("public.html", error="Bağlantının süresi dolmuş.")
+    if not link.approved:
+        return render_template("public.html", error="Bağlantı onay bekliyor.")
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
@@ -672,6 +772,8 @@ def public_download_file(token):
         db.close()
     if not link:
         return render_template("public.html", error="Bağlantının süresi dolmuş.")
+    if not link.approved:
+        return render_template("public.html", error="Bağlantı onay bekliyor.")
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
