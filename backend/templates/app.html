@@ -66,6 +66,18 @@
             </form>
             <ul id="team-list" class="list-group"></ul>
         </section>
+
+        <section id="team-details" class="mt-4 d-none">
+            <h2 id="team-title"></h2>
+            <p>Kurucu: <span id="team-creator"></span></p>
+            <ul id="team-members-list" class="list-group mb-3"></ul>
+            <div id="add-member-container" class="mb-3">
+                <input type="text" id="new-member-name" class="form-control mb-2" placeholder="Kullanıcı adı">
+                <button id="add-member-submit" class="btn btn-primary">Ekle</button>
+            </div>
+            <h3>Dosyalar</h3>
+            <ul id="team-files-list" class="list-group"></ul>
+        </section>
     </div>
 </div>
 
@@ -116,11 +128,13 @@ const selected = new Set();
 const deleteBtn = document.getElementById('delete-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 let teams = [];
+let currentTeamId = null;
 
 const sections = {
     upload: document.getElementById('upload'),
     files: document.getElementById('files'),
-    teams: document.getElementById('teams')
+    teams: document.getElementById('teams'),
+    'team-details': document.getElementById('team-details')
 };
 
 function showSection(id) {
@@ -137,8 +151,13 @@ function showSection(id) {
 document.addEventListener('click', (e) => {
     if (e.target.matches('#sidebar .nav-link')) {
         e.preventDefault();
-        const target = e.target.getAttribute('href').substring(1);
-        showSection(target);
+        const teamId = e.target.dataset.teamId;
+        if (teamId) {
+            viewTeam(teamId);
+        } else {
+            const target = e.target.getAttribute('href').substring(1);
+            showSection(target);
+        }
     }
 });
 
@@ -245,6 +264,40 @@ function formatSize(bytes) {
     return size.toFixed(1) + ' ' + units[unit];
 }
 
+async function viewTeam(teamId) {
+    const data = new FormData();
+    data.append('username', username);
+    data.append('team_id', teamId);
+    const res = await fetch('/teams/details', { method: 'POST', body: data });
+    const json = await res.json();
+    if (!json.success) {
+        return;
+    }
+    const team = json.team;
+    currentTeamId = team.id;
+    document.getElementById('team-title').textContent = team.name;
+    document.getElementById('team-creator').textContent = team.creator;
+    const membersList = document.getElementById('team-members-list');
+    membersList.innerHTML = '';
+    team.members.forEach(m => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = m;
+        membersList.appendChild(li);
+    });
+    const filesList = document.getElementById('team-files-list');
+    filesList.innerHTML = '';
+    team.files.forEach(f => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = `${f.filename} (${f.username})`;
+        filesList.appendChild(li);
+    });
+    const container = document.getElementById('add-member-container');
+    container.classList.toggle('d-none', team.creator !== username);
+    showSection('team-details');
+}
+
 async function loadTeams() {
     const formData = new FormData();
     formData.append('username', username);
@@ -260,14 +313,23 @@ async function loadTeams() {
         menuItem.className = 'nav-item';
         const link = document.createElement('a');
         link.className = 'nav-link';
-        link.href = '#teams';
+        link.href = '#team-details';
+        link.dataset.teamId = team.id;
         link.innerHTML = '<i class="bi bi-people me-2"></i>' + team.name;
         menuItem.appendChild(link);
         menu.appendChild(menuItem);
 
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.textContent = `${team.name} (${team.members.join(', ')})`;
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cursor = 'pointer';
+        nameSpan.textContent = team.name;
+        nameSpan.addEventListener('click', () => viewTeam(team.id));
+        li.appendChild(nameSpan);
+        const membersSpan = document.createElement('span');
+        membersSpan.className = 'ms-2';
+        membersSpan.textContent = `(${team.members.join(', ')})`;
+        li.appendChild(membersSpan);
         const btn = document.createElement('button');
         const isCreator = team.creator === username;
         btn.className = 'btn btn-sm ' + (isCreator ? 'btn-danger' : 'btn-outline-secondary');
@@ -296,6 +358,23 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
     if (json.success) {
         document.getElementById('team-form').reset();
         loadTeams();
+    }
+});
+
+document.getElementById('add-member-submit').addEventListener('click', async () => {
+    const newMember = document.getElementById('new-member-name').value.trim();
+    if (!newMember) {
+        return;
+    }
+    const data = new FormData();
+    data.append('username', username);
+    data.append('team_id', currentTeamId);
+    data.append('new_member', newMember);
+    const res = await fetch('/teams/add_member', { method: 'POST', body: data });
+    const json = await res.json();
+    if (json.success) {
+        document.getElementById('new-member-name').value = '';
+        viewTeam(currentTeamId);
     }
 });
 

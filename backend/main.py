@@ -489,6 +489,66 @@ def add_files_to_team():
         db.close()
 
 
+@app.route("/teams/details", methods=["POST"])
+def team_details():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    db = SessionLocal()
+    try:
+        team = db.query(Team).filter_by(id=team_id).first()
+        if not team:
+            return jsonify(success=False, error="Ekip bulunamadı")
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        if not membership:
+            return jsonify(success=False, error="Yetkiniz yok")
+        members = db.query(TeamMember).filter_by(team_id=team_id).all()
+        files = db.query(TeamFile).filter_by(team_id=team_id).all()
+        return jsonify(
+            success=True,
+            team={
+                "id": team.id,
+                "name": team.name,
+                "creator": team.creator,
+                "members": [m.username for m in members],
+                "files": [
+                    {"filename": f.filename, "username": f.username} for f in files
+                ],
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.route("/teams/add_member", methods=["POST"])
+def add_member_to_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    new_member = request.form.get("new_member")
+    db = SessionLocal()
+    try:
+        team = db.query(Team).filter_by(id=team_id).first()
+        if not team:
+            return jsonify(success=False, error="Ekip bulunamadı")
+        if team.creator != username:
+            return jsonify(success=False, error="Yetkiniz yok")
+        exists = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=new_member)
+            .first()
+        )
+        if exists:
+            return jsonify(success=False, error="Kullanıcı zaten ekipte")
+        db.add(TeamMember(team_id=team_id, username=new_member))
+        db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
 
