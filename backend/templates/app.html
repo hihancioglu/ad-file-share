@@ -197,7 +197,7 @@
 <script>
 const username = localStorage.getItem('username');
 if (!username) {
-    window.location.href = '/';
+    window.location.href = '/login';
 }
 
 const displayName = localStorage.getItem('name') || username;
@@ -205,7 +205,7 @@ document.getElementById('username-display').textContent = displayName;
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.removeItem('username');
     localStorage.removeItem('name');
-    window.location.href = '/';
+    window.location.href = '/login';
 });
 
 const selected = new Set();

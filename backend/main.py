@@ -279,7 +279,7 @@ def require_manager_auth(link):
     """Ensure the requester is the manager of the link's owner."""
     user = session.get("username")
     if not user:
-        return redirect(f"/?next={request.path}")
+        return redirect(f"/login?next={request.path}")
     manager_user, _ = get_manager_info(link.username)
     if user != manager_user:
         return render_template("message.html", message="Yetkisiz"), 403
@@ -411,13 +411,13 @@ def set_file_expiry(username: str, filename: str, expires_dt):
 
 
 @app.route("/", methods=["GET"])
-def read_index():
-    return render_template("login.html")
-
-
-@app.route("/app", methods=["GET"])
 def read_app():
     return render_template("app.html")
+
+
+@app.route("/login", methods=["GET"])
+def read_login():
+    return render_template("login.html")
 
 
 @app.route("/login", methods=["POST"])
