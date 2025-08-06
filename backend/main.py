@@ -236,10 +236,14 @@ def send_approval_email(username: str, filename: str, token: str):
     if not (manager_email and GRAPH_TENANT_ID and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET and GRAPH_SENDER):
         return
     approval_link = f"{request.host_url}share/approve/{token}"
+    reject_link = f"{request.host_url}share/reject/{token}"
     subject = "Dosya Paylaşımı Onayı"
     body = (
-        f"{username} kullanıcısı '{filename}' dosyasını paylaşmak istiyor.\n"
-        f"Onaylamak için {approval_link} adresine tıklayın."
+        f"<p>{username} kullanıcısı '{filename}' dosyasını paylaşmak istiyor.</p>"
+        f"<p>"
+        f"<a href='{approval_link}' style='padding:10px 20px; background-color:#4CAF50; color:white; text-decoration:none;'>Onayla</a>"
+        f"<a href='{reject_link}' style='padding:10px 20px; background-color:#f44336; color:white; text-decoration:none; margin-left:10px;'>Reddet</a>"
+        f"</p>"
     )
     authority = f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}"
     app = msal.ConfidentialClientApplication(
@@ -252,7 +256,7 @@ def send_approval_email(username: str, filename: str, token: str):
     message = {
         "message": {
             "subject": subject,
-            "body": {"contentType": "Text", "content": body},
+            "body": {"contentType": "HTML", "content": body},
             "toRecipients": [{"emailAddress": {"address": manager_email}}],
         }
     }
