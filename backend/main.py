@@ -140,6 +140,13 @@ def add_missing_columns():
                     "ALTER TABLE share_links ADD COLUMN approved BOOLEAN DEFAULT FALSE"
                 )
             )
+    if "rejected" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE share_links ADD COLUMN rejected BOOLEAN DEFAULT FALSE"
+                )
+            )
 
 
 add_missing_columns()
