@@ -21,8 +21,9 @@ search text. By default the application uses
 `(&(objectClass=user)(sAMAccountName=*{query}*))`.
 
 For public shares requiring manager approval, the backend sends an e-mail to the
-user's manager. Configure SMTP settings with the following variables:
+user's manager through the Microsoft Graph API. Configure the following variables:
 
-- `SMTP_SERVER` and `SMTP_PORT`
-- `SMTP_USER` and `SMTP_PASSWORD` if authentication is needed
-- `SMTP_FROM` for the sender address (defaults to `no-reply@example.com`)
+- `GRAPH_TENANT_ID`
+- `GRAPH_CLIENT_ID`
+- `GRAPH_CLIENT_SECRET`
+- `GRAPH_SENDER` for the account used to send mail

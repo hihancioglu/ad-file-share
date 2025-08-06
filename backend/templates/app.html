@@ -18,6 +18,7 @@
                     <ul class="nav flex-column ms-3">
                         <li class="nav-item"><a class="nav-link" href="#incoming"><i class="bi bi-inbox me-2"></i>Gelen Dosyalar</a></li>
                         <li class="nav-item"><a class="nav-link" href="#outgoing"><i class="bi bi-box-arrow-up me-2"></i>Giden Dosyalar</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#pending"><i class="bi bi-hourglass-split me-2"></i>Onay Bekleyenler</a></li>
                     </ul>
                 </li>
                 <li class="nav-item">
@@ -88,6 +89,20 @@
                         <th>Dosya</th>
                         <th>Alıcı</th>
                         <th>Geçerlilik</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="pending" class="d-none">
+            <h2>Onay Bekleyenler</h2>
+            <table id="pending-table" class="table">
+                <thead>
+                    <tr>
+                        <th>Dosya</th>
+                        <th>Gönderen</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -211,6 +226,7 @@ const sections = {
     files: document.getElementById('files'),
     incoming: document.getElementById('incoming'),
     outgoing: document.getElementById('outgoing'),
+    pending: document.getElementById('pending'),
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details')
 };
@@ -231,6 +247,8 @@ function showSection(id) {
             loadIncoming();
         } else if (id === 'outgoing') {
             loadOutgoing();
+        } else if (id === 'pending') {
+            loadPending();
         }
     }
 }
@@ -408,6 +426,35 @@ async function loadOutgoing() {
             data.append('type', file.type);
             await fetch('/outgoing/delete', { method: 'POST', body: data });
             loadOutgoing();
+        });
+        actTd.appendChild(btn);
+        tr.appendChild(actTd);
+        tbody.appendChild(tr);
+    });
+}
+
+async function loadPending() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/share/pending', { method: 'POST', body: fd });
+    const json = await res.json();
+    const tbody = document.querySelector('#pending-table tbody');
+    tbody.innerHTML = '';
+    json.shares.forEach(item => {
+        const tr = document.createElement('tr');
+        const fileTd = document.createElement('td');
+        fileTd.textContent = item.filename;
+        tr.appendChild(fileTd);
+        const userTd = document.createElement('td');
+        userTd.textContent = item.username;
+        tr.appendChild(userTd);
+        const actTd = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-success';
+        btn.textContent = 'Onayla';
+        btn.addEventListener('click', async () => {
+            await fetch(`/share/approve/${item.token}`);
+            loadPending();
         });
         actTd.appendChild(btn);
         tr.appendChild(actTd);
