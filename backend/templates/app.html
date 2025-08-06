@@ -17,6 +17,7 @@
                     <a class="nav-link" href="#files"><i class="bi bi-folder2-open me-2"></i>Dosyalarım</a>
                     <ul class="nav flex-column ms-3">
                         <li class="nav-item"><a class="nav-link" href="#incoming"><i class="bi bi-inbox me-2"></i>Gelen Dosyalar</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#outgoing"><i class="bi bi-box-arrow-up me-2"></i>Giden Dosyalar</a></li>
                     </ul>
                 </li>
                 <li class="nav-item">
@@ -69,6 +70,21 @@
                         <th>Dosya</th>
                         <th>Gönderen</th>
                         <th>Geçerlilik</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="outgoing" class="d-none">
+            <h2>Giden Dosyalar</h2>
+            <table id="outgoing-table" class="table">
+                <thead>
+                    <tr>
+                        <th>Dosya</th>
+                        <th>Alıcı</th>
+                        <th>Geçerlilik</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -157,6 +173,7 @@ const sections = {
     upload: document.getElementById('upload'),
     files: document.getElementById('files'),
     incoming: document.getElementById('incoming'),
+    outgoing: document.getElementById('outgoing'),
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details')
 };
@@ -170,6 +187,8 @@ function showSection(id) {
             loadFiles();
         } else if (id === 'incoming') {
             loadIncoming();
+        } else if (id === 'outgoing') {
+            loadOutgoing();
         }
     }
 }
@@ -259,9 +278,46 @@ async function loadIncoming() {
         const senderTd = document.createElement('td');
         senderTd.textContent = file.sender;
         tr.appendChild(senderTd);
+       const expTd = document.createElement('td');
+        expTd.textContent = file.expires_at;
+        tr.appendChild(expTd);
+        tbody.appendChild(tr);
+    });
+}
+
+async function loadOutgoing() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/outgoing', { method: 'POST', body: fd });
+    const json = await res.json();
+    const tbody = document.querySelector('#outgoing-table tbody');
+    tbody.innerHTML = '';
+    json.files.forEach(file => {
+        const tr = document.createElement('tr');
+        const nameTd = document.createElement('td');
+        nameTd.textContent = file.filename;
+        tr.appendChild(nameTd);
+        const targetTd = document.createElement('td');
+        targetTd.textContent = file.target;
+        tr.appendChild(targetTd);
         const expTd = document.createElement('td');
         expTd.textContent = file.expires_at;
         tr.appendChild(expTd);
+        const actTd = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-danger';
+        btn.textContent = 'Sil';
+        btn.addEventListener('click', async () => {
+            const data = new FormData();
+            data.append('username', username);
+            data.append('filename', file.filename);
+            data.append('target', file.target_id);
+            data.append('type', file.type);
+            await fetch('/outgoing/delete', { method: 'POST', body: data });
+            loadOutgoing();
+        });
+        actTd.appendChild(btn);
+        tr.appendChild(actTd);
         tbody.appendChild(tr);
     });
 }
