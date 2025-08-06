@@ -75,6 +75,17 @@ class TeamFile(Base):
     team_id = Column(Integer, ForeignKey("teams.id"), index=True)
     username = Column(String, index=True)
     filename = Column(String)
+    expires_at = Column(DateTime)
+
+
+class UserShare(Base):
+    __tablename__ = "user_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender = Column(String, index=True)
+    recipient = Column(String, index=True)
+    filename = Column(String)
+    expires_at = Column(DateTime)
 
 
 Base.metadata.create_all(engine)
@@ -383,6 +394,54 @@ def share_file():
     return jsonify(success=True, link=f"/public/{token}")
 
 
+@app.route("/share/user", methods=["POST"])
+def share_with_user():
+    sender = request.form.get("username")
+    recipient = request.form.get("recipient")
+    filename = request.form.get("filename")
+    expires_at = request.form.get("expires_at")
+    expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
+    db = SessionLocal()
+    try:
+        db.add(
+            UserShare(
+                sender=sender,
+                recipient=recipient,
+                filename=filename,
+                expires_at=expires_dt,
+            )
+        )
+        db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/incoming", methods=["POST"])
+def incoming_files():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        shares = db.query(UserShare).filter_by(recipient=username).all()
+        files = []
+        for s in shares:
+            if s.expires_at and s.expires_at < now:
+                continue
+            files.append(
+                {
+                    "filename": s.filename,
+                    "sender": get_full_name(s.sender),
+                    "expires_at": s.expires_at.strftime("%Y-%m-%d")
+                    if s.expires_at
+                    else "",
+                }
+            )
+        return jsonify(files=files)
+    finally:
+        db.close()
+
+
 @app.route("/public/<token>", methods=["GET"])
 def public_download(token):
     db = SessionLocal()
@@ -542,6 +601,8 @@ def add_files_to_team():
     username = request.form.get("username")
     team_id = request.form.get("team_id")
     filenames = request.form.getlist("filenames")
+    expires_at = request.form.get("expires_at")
+    expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
     db = SessionLocal()
     try:
         membership = (
@@ -552,7 +613,14 @@ def add_files_to_team():
         if not membership:
             return jsonify(success=False, error="Yetkiniz yok")
         for fname in filenames:
-            db.add(TeamFile(team_id=team_id, username=username, filename=fname))
+            db.add(
+                TeamFile(
+                    team_id=team_id,
+                    username=username,
+                    filename=fname,
+                    expires_at=expires_dt,
+                )
+            )
         db.commit()
         return jsonify(success=True)
     finally:
