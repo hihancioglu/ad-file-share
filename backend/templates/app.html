@@ -326,7 +326,7 @@ async function loadFiles() {
         tr.appendChild(addedTd);
 
         const expTd = document.createElement('td');
-        expTd.textContent = file.expires_at;
+        expTd.textContent = file.public_expires_at || file.expires_at;
         tr.appendChild(expTd);
 
         const extTd = document.createElement('td');
