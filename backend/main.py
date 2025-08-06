@@ -282,7 +282,7 @@ def require_manager_auth(link):
         return redirect(f"/?next={request.path}")
     manager_user, _ = get_manager_info(link.username)
     if user != manager_user:
-        return Response("Yetkisiz", 403)
+        return render_template("message.html", message="Yetkisiz"), 403
     return None
 
 
