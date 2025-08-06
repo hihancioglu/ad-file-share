@@ -605,20 +605,46 @@ def delete_outgoing():
 
 
 @app.route("/public/<token>", methods=["GET"])
-def public_download(token):
+def public_page(token):
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
     finally:
         db.close()
     if not link:
-        return jsonify(success=False, error="Link geçersiz")
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
-        return jsonify(success=False, error="Dosya bulunamadı")
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+    size_kb = round(os.path.getsize(file_path) / 1024, 2)
+    uploader = get_full_name(username)
+    return render_template(
+        "public.html",
+        token=token,
+        filename=filename,
+        uploader=uploader,
+        size_kb=size_kb,
+    )
+
+
+@app.route("/public/<token>/download", methods=["GET"])
+def public_download_file(token):
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+    finally:
+        db.close()
+    if not link:
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+    username = link.username
+    filename = link.filename
+    user_dir = os.path.join(DATA_DIR, username)
+    file_path = os.path.join(user_dir, filename)
+    if not os.path.exists(file_path):
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
     log_download(username, filename)
     return send_file(file_path, as_attachment=True, download_name=filename)
 
