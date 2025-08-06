@@ -61,6 +61,7 @@ class ShareLink(Base):
     filename = Column(String)
     expires_at = Column(DateTime)
     approved = Column(Boolean, default=False)
+    rejected = Column(Boolean, default=False)
 
 
 class DownloadLog(Base):
@@ -270,6 +271,8 @@ def find_share_token(username: str, filename: str):
             db.delete(link)
             db.commit()
             return None
+        if link and link.rejected:
+            return None
         return link.token if link else None
     finally:
         db.close()
@@ -285,6 +288,7 @@ def create_share_link(token: str, username: str, filename: str, expires_at=None)
                 filename=filename,
                 expires_at=expires_at,
                 approved=False,
+                rejected=False,
             )
         )
         db.commit()
@@ -531,6 +535,7 @@ def list_files():
                 "token": l.token,
                 "expires_at": l.expires_at,
                 "approved": l.approved,
+                "rejected": l.rejected,
             }
             for l in db.query(ShareLink)
             .filter_by(username=username)
@@ -549,6 +554,7 @@ def list_files():
         token = link_info.get("token")
         link_exp = link_info.get("expires_at")
         approved = link_info.get("approved", False)
+        rejected = link_info.get("rejected", False)
         files.append(
             {
                 "title": filename,
@@ -560,8 +566,9 @@ def list_files():
                 "size": stat.st_size,
                 "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
                 "public_expires_at": link_exp.strftime("%Y-%m-%d") if link_exp else "",
-                "link": f"/public/{token}" if token else "",
+                "link": f"/public/{token}" if token and not rejected else "",
                 "approved": approved,
+                "rejected": rejected,
             }
         )
 
@@ -628,10 +635,26 @@ def approve_share(token):
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
         if not link:
-            return "Geçersiz bağlantı"
+            return render_template("message.html", message="Geçersiz bağlantı")
         link.approved = True
+        link.rejected = False
         db.commit()
-        return "Paylaşım onaylandı"
+        return render_template("message.html", message="Paylaşım onaylandı")
+    finally:
+        db.close()
+
+
+@app.route("/share/reject/<token>", methods=["GET"])
+def reject_share(token):
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+        if not link:
+            return render_template("message.html", message="Geçersiz bağlantı")
+        link.rejected = True
+        link.approved = False
+        db.commit()
+        return render_template("message.html", message="Paylaşım reddedildi")
     finally:
         db.close()
 
@@ -641,7 +664,7 @@ def pending_shares():
     manager = request.form.get("username")
     db = SessionLocal()
     try:
-        links = db.query(ShareLink).filter_by(approved=False).all()
+        links = db.query(ShareLink).filter_by(approved=False, rejected=False).all()
         shares = []
         for link in links:
             mgr_user, _ = get_manager_info(link.username)
@@ -651,6 +674,7 @@ def pending_shares():
                         "token": link.token,
                         "username": link.username,
                         "filename": link.filename,
+                        "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
                     }
                 )
         return jsonify(shares=shares)
@@ -786,6 +810,8 @@ def public_page(token):
         db.close()
     if not link:
         return render_template("public.html", error="Bağlantının süresi dolmuş.")
+    if link.rejected:
+        return render_template("public.html", error="Bağlantı reddedildi.")
     if not link.approved:
         return render_template("public.html", error="Bağlantı onay bekliyor.")
     username = link.username
@@ -802,6 +828,7 @@ def public_page(token):
         filename=filename,
         uploader=uploader,
         size_kb=size_kb,
+        expires_at=link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
     )
 
 
@@ -818,6 +845,8 @@ def public_download_file(token):
         db.close()
     if not link:
         return render_template("public.html", error="Bağlantının süresi dolmuş.")
+    if link.rejected:
+        return render_template("public.html", error="Bağlantı reddedildi.")
     if not link.approved:
         return render_template("public.html", error="Bağlantı onay bekliyor.")
     username = link.username

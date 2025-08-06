@@ -18,7 +18,7 @@
                     <ul class="nav flex-column ms-3">
                         <li class="nav-item"><a class="nav-link" href="#incoming"><i class="bi bi-inbox me-2"></i>Gelen Dosyalar</a></li>
                         <li class="nav-item"><a class="nav-link" href="#outgoing"><i class="bi bi-box-arrow-up me-2"></i>Giden Dosyalar</a></li>
-                        <li class="nav-item"><a class="nav-link" href="#pending"><i class="bi bi-hourglass-split me-2"></i>Onay Bekleyenler</a></li>
+                        <li class="nav-item d-none" id="pending-menu-item"><a class="nav-link" href="#pending"><i class="bi bi-hourglass-split me-2"></i>Onay Bekleyenler</a></li>
                     </ul>
                 </li>
                 <li class="nav-item">
@@ -103,6 +103,7 @@
                     <tr>
                         <th>Dosya</th>
                         <th>Gönderen</th>
+                        <th>Geçerlilik</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -337,10 +338,22 @@ async function loadFiles() {
                 setTimeout(() => msg.remove(), 2000);
             });
             titleTd.appendChild(linkBtn);
-
+        }
+        if (file.link || file.approved || file.rejected) {
             const statusBtn = document.createElement('button');
-            statusBtn.className = 'btn btn-sm ms-2 ' + (file.approved ? 'btn-success' : 'btn-warning');
-            statusBtn.textContent = file.approved ? 'Onaylandı' : 'Onay bekliyor';
+            let cls, text;
+            if (file.rejected) {
+                cls = 'btn-danger';
+                text = 'Reddedildi';
+            } else if (file.approved) {
+                cls = 'btn-success';
+                text = 'Onaylandı';
+            } else {
+                cls = 'btn-warning';
+                text = 'Onay bekliyor';
+            }
+            statusBtn.className = 'btn btn-sm ms-2 ' + cls;
+            statusBtn.textContent = text;
             statusBtn.disabled = true;
             titleTd.appendChild(statusBtn);
         }
@@ -448,18 +461,35 @@ async function loadPending() {
         const userTd = document.createElement('td');
         userTd.textContent = item.username;
         tr.appendChild(userTd);
+        const expTd = document.createElement('td');
+        expTd.textContent = item.expires_at;
+        tr.appendChild(expTd);
         const actTd = document.createElement('td');
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-sm btn-success';
-        btn.textContent = 'Onayla';
-        btn.addEventListener('click', async () => {
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'btn btn-sm btn-success me-2';
+        approveBtn.textContent = 'Onayla';
+        approveBtn.addEventListener('click', async () => {
             await fetch(`/share/approve/${item.token}`);
             loadPending();
         });
-        actTd.appendChild(btn);
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'btn btn-sm btn-danger';
+        rejectBtn.textContent = 'Reddet';
+        rejectBtn.addEventListener('click', async () => {
+            await fetch(`/share/reject/${item.token}`);
+            loadPending();
+        });
+        actTd.appendChild(approveBtn);
+        actTd.appendChild(rejectBtn);
         tr.appendChild(actTd);
         tbody.appendChild(tr);
     });
+    const pendingMenu = document.getElementById('pending-menu-item');
+    if (json.shares.length === 0) {
+        pendingMenu.classList.add('d-none');
+    } else {
+        pendingMenu.classList.remove('d-none');
+    }
 }
 
 deleteBtn.addEventListener('click', async () => {
@@ -701,6 +731,7 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 });
 
 loadTeams();
+loadPending();
 showSection('upload');
 
 document.getElementById('load-users').addEventListener('click', async () => {
