@@ -13,7 +13,12 @@
             <h5>Menü</h5>
             <ul class="nav flex-column">
                 <li class="nav-item"><a class="nav-link" href="#upload"><i class="bi bi-upload me-2"></i>Yükle</a></li>
-                <li class="nav-item"><a class="nav-link" href="#files"><i class="bi bi-folder2-open me-2"></i>Dosyalarım</a></li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#files"><i class="bi bi-folder2-open me-2"></i>Dosyalarım</a>
+                    <ul class="nav flex-column ms-3">
+                        <li class="nav-item"><a class="nav-link" href="#incoming"><i class="bi bi-inbox me-2"></i>Gelen Dosyalar</a></li>
+                    </ul>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" href="#teams"><i class="bi bi-people me-2"></i>Ekipler</a>
                     <ul id="team-menu" class="nav flex-column ms-3"></ul>
@@ -50,6 +55,20 @@
                         <th>Uzantı</th>
                         <th>Açıklama</th>
                         <th>Boyut</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="incoming" class="d-none">
+            <h2>Gelen Dosyalar</h2>
+            <table id="incoming-table" class="table">
+                <thead>
+                    <tr>
+                        <th>Dosya</th>
+                        <th>Gönderen</th>
+                        <th>Geçerlilik</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -130,10 +149,14 @@ const addToTeamBtn = document.getElementById('add-to-team');
 let teams = [];
 let currentTeamId = null;
 let userModalMode = 'create';
+let teamModalMode = 'add-files';
+let shareFileName = null;
+let shareExpiry = '';
 
 const sections = {
     upload: document.getElementById('upload'),
     files: document.getElementById('files'),
+    incoming: document.getElementById('incoming'),
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details')
 };
@@ -145,6 +168,8 @@ function showSection(id) {
         section.classList.remove('d-none');
         if (id === 'files') {
             loadFiles();
+        } else if (id === 'incoming') {
+            loadIncoming();
         }
     }
 }
@@ -219,6 +244,28 @@ async function loadFiles() {
     });
 }
 
+async function loadIncoming() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/incoming', { method: 'POST', body: fd });
+    const json = await res.json();
+    const tbody = document.querySelector('#incoming-table tbody');
+    tbody.innerHTML = '';
+    json.files.forEach(file => {
+        const tr = document.createElement('tr');
+        const nameTd = document.createElement('td');
+        nameTd.textContent = file.filename;
+        tr.appendChild(nameTd);
+        const senderTd = document.createElement('td');
+        senderTd.textContent = file.sender;
+        tr.appendChild(senderTd);
+        const expTd = document.createElement('td');
+        expTd.textContent = file.expires_at;
+        tr.appendChild(expTd);
+        tbody.appendChild(tr);
+    });
+}
+
 deleteBtn.addEventListener('click', async () => {
     for (const filename of selected) {
         const formData = new FormData();
@@ -230,6 +277,7 @@ deleteBtn.addEventListener('click', async () => {
 });
 
 addToTeamBtn.addEventListener('click', () => {
+    teamModalMode = 'add-files';
     const select = document.getElementById('team-select');
     select.innerHTML = '';
     teams.forEach(team => {
@@ -247,12 +295,33 @@ document.getElementById('team-modal-add').addEventListener('click', async () => 
     const data = new FormData();
     data.append('username', username);
     data.append('team_id', teamId);
-    for (const f of selected) {
-        data.append('filenames', f);
+    if (teamModalMode === 'add-files') {
+        for (const f of selected) {
+            data.append('filenames', f);
+        }
+    } else if (teamModalMode === 'share-team') {
+        data.append('filenames', shareFileName);
+        if (shareExpiry) {
+            data.append('expires_at', shareExpiry);
+        }
     }
     await fetch('/teams/add_files', { method: 'POST', body: data });
     bootstrap.Modal.getInstance(document.getElementById('teamModal')).hide();
+    teamModalMode = 'add-files';
+    shareFileName = null;
+    shareExpiry = '';
 });
+
+async function shareWithUser(filename, recipient, expiresAt) {
+    const fd = new FormData();
+    fd.append('username', username);
+    fd.append('filename', filename);
+    fd.append('recipient', recipient);
+    if (expiresAt) {
+        fd.append('expires_at', expiresAt);
+    }
+    await fetch('/share/user', { method: 'POST', body: fd });
+}
 
 function formatSize(bytes) {
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -440,8 +509,16 @@ document.getElementById('user-modal-add').addEventListener('click', async () => 
         }
         viewTeam(currentTeamId);
         loadTeams();
+    } else if (userModalMode === 'share-user') {
+        for (const cb of checkboxes) {
+            await shareWithUser(shareFileName, cb.value, shareExpiry);
+            cb.checked = false;
+        }
     }
     bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
+    userModalMode = 'create';
+    shareFileName = null;
+    shareExpiry = '';
 });
 
 function nodeContainsUser(node, username) {
@@ -515,16 +592,69 @@ fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 async function handleFiles(files) {
     const result = document.getElementById('upload-result');
     result.innerHTML = '';
+    const uploaded = [];
     for (const file of files) {
         try {
             await uploadFile(file);
+            uploaded.push(file.name);
         } catch (e) {
             result.innerHTML = '<div class="alert alert-danger">' + (e.message || 'Hata') + '</div>';
             return;
         }
     }
     result.innerHTML += '<div class="alert alert-success">Dosyalar yüklendi</div>';
+    showShareOptions(uploaded, result);
     loadFiles();
+}
+
+function showShareOptions(filenames, container) {
+    filenames.forEach(name => {
+        const div = document.createElement('div');
+        div.className = 'mt-2';
+        const label = document.createElement('span');
+        label.textContent = name;
+        const date = document.createElement('input');
+        date.type = 'date';
+        date.className = 'form-control d-inline-block w-auto ms-2';
+        const userBtn = document.createElement('button');
+        userBtn.className = 'btn btn-sm btn-primary ms-2';
+        userBtn.textContent = 'Kullanıcıya Gönder';
+        userBtn.addEventListener('click', async () => {
+            shareFileName = name;
+            shareExpiry = date.value;
+            userModalMode = 'share-user';
+            const res = await fetch('/users/tree');
+            const json = await res.json();
+            const treeContainer = document.getElementById('ou-tree');
+            treeContainer.innerHTML = '';
+            renderTree(json.tree, treeContainer, username);
+            const modal = new bootstrap.Modal(document.getElementById('userModal'));
+            modal.show();
+        });
+        const teamBtn = document.createElement('button');
+        teamBtn.className = 'btn btn-sm btn-secondary ms-2';
+        teamBtn.textContent = 'Ekibe Gönder';
+        teamBtn.addEventListener('click', () => {
+            shareFileName = name;
+            shareExpiry = date.value;
+            teamModalMode = 'share-team';
+            const select = document.getElementById('team-select');
+            select.innerHTML = '';
+            teams.forEach(team => {
+                const opt = document.createElement('option');
+                opt.value = team.id;
+                opt.textContent = team.name;
+                select.appendChild(opt);
+            });
+            const modal = new bootstrap.Modal(document.getElementById('teamModal'));
+            modal.show();
+        });
+        div.appendChild(label);
+        div.appendChild(date);
+        div.appendChild(userBtn);
+        div.appendChild(teamBtn);
+        container.appendChild(div);
+    });
 }
 
 async function uploadFile(file) {
