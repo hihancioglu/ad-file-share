@@ -97,6 +97,15 @@ class UserShare(Base):
     expires_at = Column(DateTime)
 
 
+class UserFile(Base):
+    __tablename__ = "user_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    filename = Column(String)
+    expires_at = Column(DateTime)
+
+
 Base.metadata.create_all(engine)
 
 
@@ -172,6 +181,27 @@ def log_download(username: str, filename: str):
     db = SessionLocal()
     try:
         db.add(DownloadLog(username=username, filename=filename))
+        db.commit()
+    finally:
+        db.close()
+
+
+def set_file_expiry(username: str, filename: str, expires_dt):
+    db = SessionLocal()
+    try:
+        meta = (
+            db.query(UserFile)
+            .filter_by(username=username, filename=filename)
+            .first()
+        )
+        if meta:
+            meta.expires_at = expires_dt
+        else:
+            db.add(
+                UserFile(
+                    username=username, filename=filename, expires_at=expires_dt
+                )
+            )
         db.commit()
     finally:
         db.close()
@@ -317,6 +347,8 @@ def upload_file():
     """
 
     username = request.form.get("username")
+    expires_at = request.form.get("expires_at")
+    expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
     user_dir = os.path.join(DATA_DIR, username)
     os.makedirs(user_dir, exist_ok=True)
 
@@ -335,6 +367,7 @@ def upload_file():
             f.write(chunk.read())
         # If this was the last chunk, respond with completion info
         if chunk_index + 1 == total_chunks:
+            set_file_expiry(username, filename, expires_dt)
             return jsonify(success=True, filenames=[filename])
         return jsonify(success=True, chunk_index=chunk_index)
 
@@ -350,6 +383,7 @@ def upload_file():
             file_path = os.path.join(user_dir, file.filename)
             file.save(file_path)
             uploaded.append(file.filename)
+            set_file_expiry(username, file.filename, expires_dt)
 
     return jsonify(success=True, filenames=uploaded)
 
@@ -361,10 +395,20 @@ def list_files():
     if not os.path.exists(user_dir):
         return jsonify(files=[])
 
+    db = SessionLocal()
+    try:
+        metas = {
+            m.filename: m.expires_at
+            for m in db.query(UserFile).filter_by(username=username).all()
+        }
+    finally:
+        db.close()
+
     files = []
     for filename in os.listdir(user_dir):
         file_path = os.path.join(user_dir, filename)
         stat = os.stat(file_path)
+        exp = metas.get(filename)
         files.append(
             {
                 "title": filename,
@@ -374,6 +418,7 @@ def list_files():
                 "extension": os.path.splitext(filename)[1].lstrip("."),
                 "description": "",
                 "size": stat.st_size,
+                "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
             }
         )
 
@@ -401,6 +446,12 @@ def delete_file():
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
     os.remove(file_path)
+    db = SessionLocal()
+    try:
+        db.query(UserFile).filter_by(username=username, filename=filename).delete()
+        db.commit()
+    finally:
+        db.close()
     return jsonify(success=True)
 
 
