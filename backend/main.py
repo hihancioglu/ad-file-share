@@ -177,6 +177,15 @@ def create_share_link(token: str, username: str, filename: str):
         db.close()
 
 
+def delete_share_link(username: str, filename: str):
+    db = SessionLocal()
+    try:
+        db.query(ShareLink).filter_by(username=username, filename=filename).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
 def log_download(username: str, filename: str):
     db = SessionLocal()
     try:
@@ -470,6 +479,14 @@ def share_file():
         token = secrets.token_urlsafe(16)
         create_share_link(token, username, filename)
     return jsonify(success=True, link=f"/public/{token}")
+
+
+@app.route("/share/delete", methods=["POST"])
+def delete_share():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    delete_share_link(username, filename)
+    return jsonify(success=True)
 
 
 @app.route("/share/user", methods=["POST"])

@@ -183,6 +183,7 @@ let teamModalMode = 'add-files';
 let shareFileName = null;
 let shareFileNames = [];
 let shareExpiry = '';
+let currentFiles = [];
 
 const sections = {
     upload: document.getElementById('upload'),
@@ -232,6 +233,16 @@ function updateActionButtons() {
     shareBtn.disabled = disabled;
     addToTeamBtn.disabled = disabled;
     publicShareBtn.disabled = disabled || selected.size !== 1;
+    publicShareBtn.classList.add('btn-outline-primary');
+    publicShareBtn.classList.remove('btn-primary');
+    if (selected.size === 1) {
+        const filename = Array.from(selected)[0];
+        const file = currentFiles.find(f => f.title === filename);
+        if (file && file.link) {
+            publicShareBtn.classList.add('btn-primary');
+            publicShareBtn.classList.remove('btn-outline-primary');
+        }
+    }
 }
 
 async function loadFiles() {
@@ -239,6 +250,7 @@ async function loadFiles() {
     formData.append('username', username);
     const res = await fetch('/list', { method: 'POST', body: formData });
     const json = await res.json();
+    currentFiles = json.files;
     const tbody = document.querySelector('#file-table tbody');
     tbody.innerHTML = '';
     selected.clear();
@@ -269,7 +281,16 @@ async function loadFiles() {
             linkBtn.textContent = 'Link';
             linkBtn.addEventListener('click', async () => {
                 const url = window.location.origin + file.link;
-                await navigator.clipboard.writeText(url);
+                try {
+                    await navigator.clipboard.writeText(url);
+                } catch (e) {
+                    const tmp = document.createElement('textarea');
+                    tmp.value = url;
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    document.execCommand('copy');
+                    tmp.remove();
+                }
                 const msg = document.createElement('span');
                 msg.className = 'ms-2 text-success';
                 msg.textContent = 'URL kopyalandı';
@@ -375,10 +396,12 @@ deleteBtn.addEventListener('click', async () => {
 
 publicShareBtn.addEventListener('click', async () => {
     const filename = Array.from(selected)[0];
+    const file = currentFiles.find(f => f.title === filename);
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', filename);
-    const res = await fetch('/share', { method: 'POST', body: formData });
+    const url = file && file.link ? '/share/delete' : '/share';
+    const res = await fetch(url, { method: 'POST', body: formData });
     const json = await res.json();
     if (json.success) {
         await loadFiles();
