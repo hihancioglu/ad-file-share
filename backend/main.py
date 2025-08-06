@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
@@ -50,6 +50,7 @@ class ShareLink(Base):
     token = Column(String, primary_key=True, index=True)
     username = Column(String, index=True)
     filename = Column(String)
+    expires_at = Column(DateTime)
 
 
 class DownloadLog(Base):
@@ -117,6 +118,11 @@ def add_missing_columns():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE team_files ADD COLUMN expires_at TIMESTAMP"))
 
+    share_cols = [col["name"] for col in inspector.get_columns("share_links")]
+    if "expires_at" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE share_links ADD COLUMN expires_at TIMESTAMP"))
+
 
 add_missing_columns()
 
@@ -163,15 +169,23 @@ def find_share_token(username: str, filename: str):
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(username=username, filename=filename).first()
+        if link and link.expires_at and link.expires_at < datetime.utcnow():
+            db.delete(link)
+            db.commit()
+            return None
         return link.token if link else None
     finally:
         db.close()
 
 
-def create_share_link(token: str, username: str, filename: str):
+def create_share_link(token: str, username: str, filename: str, expires_at=None):
     db = SessionLocal()
     try:
-        db.add(ShareLink(token=token, username=username, filename=filename))
+        db.add(
+            ShareLink(
+                token=token, username=username, filename=filename, expires_at=expires_at
+            )
+        )
         db.commit()
     finally:
         db.close()
@@ -410,9 +424,13 @@ def list_files():
             m.filename: m.expires_at
             for m in db.query(UserFile).filter_by(username=username).all()
         }
+        now = datetime.utcnow()
         links = {
             l.filename: l.token
-            for l in db.query(ShareLink).filter_by(username=username).all()
+            for l in db.query(ShareLink)
+            .filter_by(username=username)
+            .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
+            .all()
         }
     finally:
         db.close()
@@ -474,10 +492,14 @@ def delete_file():
 def share_file():
     username = request.form.get("username")
     filename = request.form.get("filename")
+    days = request.form.get("days")
     token = find_share_token(username, filename)
     if token is None:
         token = secrets.token_urlsafe(16)
-        create_share_link(token, username, filename)
+        expires_at = None
+        if days and int(days) > 0:
+            expires_at = datetime.utcnow() + timedelta(days=int(days))
+        create_share_link(token, username, filename, expires_at)
     return jsonify(success=True, link=f"/public/{token}")
 
 
@@ -609,10 +631,14 @@ def public_page(token):
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
+        if link and link.expires_at and link.expires_at < datetime.utcnow():
+            db.delete(link)
+            db.commit()
+            link = None
     finally:
         db.close()
     if not link:
-        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+        return render_template("public.html", error="Bağlantının süresi dolmuş.")
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
@@ -635,10 +661,14 @@ def public_download_file(token):
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
+        if link and link.expires_at and link.expires_at < datetime.utcnow():
+            db.delete(link)
+            db.commit()
+            link = None
     finally:
         db.close()
     if not link:
-        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+        return render_template("public.html", error="Bağlantının süresi dolmuş.")
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)

@@ -10,7 +10,7 @@
 <div class="d-flex">
     <nav id="sidebar" class="bg-light border-end vh-100 flex-shrink-0" style="width: 250px;">
         <div class="p-3">
-            <img src="{{ url_for('static', filename='logo-small.png') }}" alt="Logo" class="img-fluid mb-3" style="max-width: 80px;">
+            <img src="{{ url_for('static', filename='logo-small.png') }}" alt="Logo" class="img-fluid mb-3 mx-auto d-block" style="max-width: 80px;">
             <ul class="nav flex-column">
                 <li class="nav-item"><a class="nav-link" href="#upload"><i class="bi bi-upload me-2"></i>Yükle</a></li>
                 <li class="nav-item">
@@ -148,6 +148,29 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="team-modal-add">Ekle</button>
+      </div>
+  </div>
+</div>
+</div>
+
+<div class="modal fade" id="shareLinkModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Paylaş</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <select id="share-expiry" class="form-select">
+          <option value="1">1 gün</option>
+          <option value="7" selected>7 gün</option>
+          <option value="30">30 gün</option>
+          <option value="60">60 gün</option>
+          <option value="0">Süresiz</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
       </div>
     </div>
   </div>
@@ -391,18 +414,30 @@ deleteBtn.addEventListener('click', async () => {
     await loadFiles();
 });
 
-publicShareBtn.addEventListener('click', async () => {
+publicShareBtn.addEventListener('click', () => {
     const filename = Array.from(selected)[0];
     const file = currentFiles.find(f => f.title === filename);
+    if (file && file.link) {
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('filename', filename);
+        fetch('/share/delete', { method: 'POST', body: formData }).then(() => loadFiles());
+    } else {
+        shareFileName = filename;
+        const modal = new bootstrap.Modal(document.getElementById('shareLinkModal'));
+        modal.show();
+    }
+});
+
+document.getElementById('share-confirm').addEventListener('click', async () => {
+    const days = document.getElementById('share-expiry').value;
     const formData = new FormData();
     formData.append('username', username);
-    formData.append('filename', filename);
-    const url = file && file.link ? '/share/delete' : '/share';
-    const res = await fetch(url, { method: 'POST', body: formData });
-    const json = await res.json();
-    if (json.success) {
-        await loadFiles();
-    }
+    formData.append('filename', shareFileName);
+    formData.append('days', days);
+    await fetch('/share', { method: 'POST', body: formData });
+    bootstrap.Modal.getInstance(document.getElementById('shareLinkModal')).hide();
+    await loadFiles();
 });
 
 addToTeamBtn.addEventListener('click', () => {
