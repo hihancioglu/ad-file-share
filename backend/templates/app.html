@@ -879,8 +879,8 @@ async function handleFiles(files) {
     const uploaded = [];
     for (const file of files) {
         try {
-            await uploadFile(file, expiry);
-            uploaded.push(file.name);
+            const savedName = await uploadFile(file, expiry);
+            uploaded.push(savedName);
         } catch (e) {
             result.innerHTML = '<div class="alert alert-danger">' + (e.message || 'Hata') + '</div>';
             return;
@@ -946,6 +946,7 @@ async function uploadFile(file, expiry) {
     const chunkSize = 5 * 1024 * 1024; // 5MB
     const totalChunks = Math.ceil(file.size / chunkSize);
     const bar = createProgressBar(file.name);
+    let finalName = file.name;
 
     for (let i = 0; i < totalChunks; i++) {
         const start = i * chunkSize;
@@ -963,9 +964,13 @@ async function uploadFile(file, expiry) {
         if (!json.success) {
             throw new Error(json.error || 'Yükleme başarısız');
         }
+        if (json.filenames && json.filenames.length > 0) {
+            finalName = json.filenames[0];
+        }
         bar.style.width = ((i + 1) / totalChunks * 100) + '%';
     }
     bar.classList.add('bg-success');
+    return finalName;
 }
 
 function createProgressBar(filename) {
