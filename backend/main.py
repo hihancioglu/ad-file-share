@@ -442,6 +442,73 @@ def incoming_files():
         db.close()
 
 
+@app.route("/outgoing", methods=["POST"])
+def outgoing_files():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        files = []
+        shares = db.query(UserShare).filter_by(sender=username).all()
+        for s in shares:
+            if s.expires_at and s.expires_at < now:
+                continue
+            files.append(
+                {
+                    "filename": s.filename,
+                    "target": get_full_name(s.recipient),
+                    "target_id": s.recipient,
+                    "type": "user",
+                    "expires_at": s.expires_at.strftime("%Y-%m-%d")
+                    if s.expires_at
+                    else "",
+                }
+            )
+        team_shares = db.query(TeamFile).filter_by(username=username).all()
+        team_ids = [t.team_id for t in team_shares]
+        teams = db.query(Team).filter(Team.id.in_(team_ids)).all() if team_ids else []
+        team_names = {t.id: t.name for t in teams}
+        for t in team_shares:
+            if t.expires_at and t.expires_at < now:
+                continue
+            files.append(
+                {
+                    "filename": t.filename,
+                    "target": team_names.get(t.team_id, ""),
+                    "target_id": t.team_id,
+                    "type": "team",
+                    "expires_at": t.expires_at.strftime("%Y-%m-%d")
+                    if t.expires_at
+                    else "",
+                }
+            )
+        return jsonify(files=files)
+    finally:
+        db.close()
+
+
+@app.route("/outgoing/delete", methods=["POST"])
+def delete_outgoing():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    target = request.form.get("target")
+    target_type = request.form.get("type")
+    db = SessionLocal()
+    try:
+        if target_type == "user":
+            db.query(UserShare).filter_by(
+                sender=username, recipient=target, filename=filename
+            ).delete()
+        elif target_type == "team":
+            db.query(TeamFile).filter_by(
+                team_id=int(target), username=username, filename=filename
+            ).delete()
+        db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
 @app.route("/public/<token>", methods=["GET"])
 def public_download(token):
     db = SessionLocal()
