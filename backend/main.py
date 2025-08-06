@@ -1,7 +1,9 @@
 import os
 import secrets
-import smtplib
 from datetime import datetime, timedelta
+
+import msal
+import requests
 
 from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
@@ -37,11 +39,10 @@ LDAP_SEARCH_FILTER = os.getenv(
     "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
 )
 
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "25"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@example.com")
+GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
+GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID")
+GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET")
+GRAPH_SENDER = os.getenv("GRAPH_SENDER", "")
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -181,7 +182,7 @@ def get_full_name(username: str):
     return full_name or username
 
 
-def get_manager_email(username: str):
+def get_manager_info(username: str):
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
     try:
@@ -192,31 +193,39 @@ def get_manager_email(username: str):
             authentication=ldap3.NTLM,
         )
         if not conn.bind():
-            return ""
+            return "", ""
         search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
         conn.search(LDAP_BASE_DN, search_filter, attributes=["manager"])
         if not conn.entries:
-            return ""
+            return "", ""
         manager_dn = getattr(conn.entries[0], "manager", None)
         if not manager_dn:
-            return ""
-        conn.search(manager_dn.value, "(objectClass=user)", attributes=["mail"])
+            return "", ""
+        conn.search(
+            manager_dn.value,
+            "(objectClass=user)",
+            attributes=["mail", "sAMAccountName"],
+        )
         if conn.entries:
             mail_attr = getattr(conn.entries[0], "mail", None)
-            return mail_attr.value if mail_attr else ""
+            user_attr = getattr(conn.entries[0], "sAMAccountName", None)
+            return (
+                user_attr.value if user_attr else "",
+                mail_attr.value if mail_attr else "",
+            )
     except Exception:
-        return ""
+        return "", ""
     finally:
         try:
             conn.unbind()
         except Exception:
             pass
-    return ""
+    return "", ""
 
 
 def send_approval_email(username: str, filename: str, token: str):
-    manager_email = get_manager_email(username)
-    if not manager_email or not SMTP_SERVER:
+    _, manager_email = get_manager_info(username)
+    if not (manager_email and GRAPH_TENANT_ID and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET and GRAPH_SENDER):
         return
     approval_link = f"{request.host_url}share/approve/{token}"
     subject = "Dosya Paylaşımı Onayı"
@@ -224,16 +233,31 @@ def send_approval_email(username: str, filename: str, token: str):
         f"{username} kullanıcısı '{filename}' dosyasını paylaşmak istiyor.\n"
         f"Onaylamak için {approval_link} adresine tıklayın."
     )
-    msg = f"Subject: {subject}\n\n{body}"
+    authority = f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}"
+    app = msal.ConfidentialClientApplication(
+        GRAPH_CLIENT_ID, authority=authority, client_credential=GRAPH_CLIENT_SECRET
+    )
+    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    token_value = result.get("access_token")
+    if not token_value:
+        return
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": [{"emailAddress": {"address": manager_email}}],
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {token_value}",
+        "Content-Type": "application/json",
+    }
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            if SMTP_USER and SMTP_PASSWORD:
-                try:
-                    server.starttls()
-                except Exception:
-                    pass
-                server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM, [manager_email], msg)
+        requests.post(
+            f"https://graph.microsoft.com/v1.0/users/{GRAPH_SENDER}/sendMail",
+            headers=headers,
+            json=message,
+        )
     except Exception:
         pass
 
@@ -608,6 +632,28 @@ def approve_share(token):
         link.approved = True
         db.commit()
         return "Paylaşım onaylandı"
+    finally:
+        db.close()
+
+
+@app.route("/share/pending", methods=["POST"])
+def pending_shares():
+    manager = request.form.get("username")
+    db = SessionLocal()
+    try:
+        links = db.query(ShareLink).filter_by(approved=False).all()
+        shares = []
+        for link in links:
+            mgr_user, _ = get_manager_info(link.username)
+            if mgr_user == manager:
+                shares.append(
+                    {
+                        "token": link.token,
+                        "username": link.username,
+                        "filename": link.filename,
+                    }
+                )
+        return jsonify(shares=shares)
     finally:
         db.close()
 
