@@ -116,6 +116,31 @@ const deleteBtn = document.getElementById('delete-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 let teams = [];
 
+const sections = {
+    upload: document.getElementById('upload'),
+    files: document.getElementById('files'),
+    teams: document.getElementById('teams')
+};
+
+function showSection(id) {
+    Object.values(sections).forEach(sec => sec.classList.add('d-none'));
+    const section = sections[id];
+    if (section) {
+        section.classList.remove('d-none');
+        if (id === 'files') {
+            loadFiles();
+        }
+    }
+}
+
+document.addEventListener('click', (e) => {
+    if (e.target.matches('#sidebar .nav-link')) {
+        e.preventDefault();
+        const target = e.target.getAttribute('href').substring(1);
+        showSection(target);
+    }
+});
+
 function updateActionButtons() {
     const disabled = selected.size === 0;
     deleteBtn.disabled = disabled;
@@ -219,8 +244,6 @@ function formatSize(bytes) {
     return size.toFixed(1) + ' ' + units[unit];
 }
 
-loadFiles();
-
 async function loadTeams() {
     const formData = new FormData();
     formData.append('username', username);
@@ -276,6 +299,7 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 });
 
 loadTeams();
+showSection('upload');
 
 document.getElementById('load-users').addEventListener('click', async () => {
     const res = await fetch('/users/tree');
