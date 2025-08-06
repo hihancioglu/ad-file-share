@@ -401,6 +401,10 @@ def list_files():
             m.filename: m.expires_at
             for m in db.query(UserFile).filter_by(username=username).all()
         }
+        links = {
+            l.filename: l.token
+            for l in db.query(ShareLink).filter_by(username=username).all()
+        }
     finally:
         db.close()
 
@@ -409,6 +413,7 @@ def list_files():
         file_path = os.path.join(user_dir, filename)
         stat = os.stat(file_path)
         exp = metas.get(filename)
+        token = links.get(filename)
         files.append(
             {
                 "title": filename,
@@ -419,6 +424,7 @@ def list_files():
                 "description": "",
                 "size": stat.st_size,
                 "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
+                "link": f"/public/{token}" if token else "",
             }
         )
 
