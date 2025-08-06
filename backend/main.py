@@ -443,6 +443,33 @@ def leave_team():
         db.close()
 
 
+@app.route("/teams/remove_member", methods=["POST"])
+def remove_member():
+    requester = request.form.get("username")
+    team_id = request.form.get("team_id")
+    member = request.form.get("member")
+    db = SessionLocal()
+    try:
+        team = db.query(Team).filter_by(id=team_id).first()
+        if not team:
+            return jsonify(success=False, error="Ekip bulunamadı")
+        if member == team.creator:
+            return jsonify(success=False, error="Kurucu silinemez")
+        if requester != member and team.creator != requester:
+            return jsonify(success=False, error="Yetkiniz yok")
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=member)
+            .first()
+        )
+        if membership:
+            db.delete(membership)
+            db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
 @app.route("/teams/list", methods=["POST"])
 def list_teams():
     username = request.form.get("username")

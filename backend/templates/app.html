@@ -72,8 +72,7 @@
             <p>Kurucu: <span id="team-creator"></span></p>
             <ul id="team-members-list" class="list-group mb-3"></ul>
             <div id="add-member-container" class="mb-3">
-                <input type="text" id="new-member-name" class="form-control mb-2" placeholder="Kullanıcı adı">
-                <button id="add-member-submit" class="btn btn-primary">Ekle</button>
+                <button id="add-member-btn" class="btn btn-outline-secondary">Kullanıcı Ekle</button>
             </div>
             <h3>Dosyalar</h3>
             <ul id="team-files-list" class="list-group"></ul>
@@ -129,6 +128,7 @@ const deleteBtn = document.getElementById('delete-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 let teams = [];
 let currentTeamId = null;
+let userModalMode = 'create';
 
 const sections = {
     upload: document.getElementById('upload'),
@@ -281,8 +281,30 @@ async function viewTeam(teamId) {
     membersList.innerHTML = '';
     team.members.forEach(m => {
         const li = document.createElement('li');
-        li.className = 'list-group-item';
-        li.textContent = m;
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const span = document.createElement('span');
+        span.textContent = m + (m === team.creator ? ' (Kurucu)' : '');
+        li.appendChild(span);
+        if (m !== team.creator && (username === team.creator || m === username)) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm ' + (m === username ? 'btn-outline-secondary' : 'btn-danger');
+            btn.textContent = m === username ? 'Ayrıl' : 'Sil';
+            btn.addEventListener('click', async () => {
+                const fd = new FormData();
+                fd.append('username', username);
+                fd.append('team_id', team.id);
+                fd.append('member', m);
+                await fetch('/teams/remove_member', { method: 'POST', body: fd });
+                if (m === username) {
+                    loadTeams();
+                    showSection('teams');
+                } else {
+                    viewTeam(team.id);
+                    loadTeams();
+                }
+            });
+            li.appendChild(btn);
+        }
         membersList.appendChild(li);
     });
     const filesList = document.getElementById('team-files-list');
@@ -361,27 +383,11 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
     }
 });
 
-document.getElementById('add-member-submit').addEventListener('click', async () => {
-    const newMember = document.getElementById('new-member-name').value.trim();
-    if (!newMember) {
-        return;
-    }
-    const data = new FormData();
-    data.append('username', username);
-    data.append('team_id', currentTeamId);
-    data.append('new_member', newMember);
-    const res = await fetch('/teams/add_member', { method: 'POST', body: data });
-    const json = await res.json();
-    if (json.success) {
-        document.getElementById('new-member-name').value = '';
-        viewTeam(currentTeamId);
-    }
-});
-
 loadTeams();
 showSection('upload');
 
 document.getElementById('load-users').addEventListener('click', async () => {
+    userModalMode = 'create';
     const res = await fetch('/users/tree');
     const json = await res.json();
     const container = document.getElementById('ou-tree');
@@ -391,18 +397,43 @@ document.getElementById('load-users').addEventListener('click', async () => {
     modal.show();
 });
 
-document.getElementById('user-modal-add').addEventListener('click', () => {
-    const select = document.getElementById('team-members');
-    document.querySelectorAll('#ou-tree input.user-checkbox:checked').forEach(cb => {
-        if (!Array.from(select.options).some(o => o.value === cb.value)) {
-            const opt = document.createElement('option');
-            opt.value = cb.value;
-            opt.textContent = cb.dataset.name;
-            opt.selected = true;
-            select.appendChild(opt);
+document.getElementById('add-member-btn').addEventListener('click', async () => {
+    userModalMode = 'add-member';
+    const res = await fetch('/users/tree');
+    const json = await res.json();
+    const container = document.getElementById('ou-tree');
+    container.innerHTML = '';
+    renderTree(json.tree, container, username);
+    const modal = new bootstrap.Modal(document.getElementById('userModal'));
+    modal.show();
+});
+
+document.getElementById('user-modal-add').addEventListener('click', async () => {
+    const checkboxes = document.querySelectorAll('#ou-tree input.user-checkbox:checked');
+    if (userModalMode === 'create') {
+        const select = document.getElementById('team-members');
+        checkboxes.forEach(cb => {
+            if (!Array.from(select.options).some(o => o.value === cb.value)) {
+                const opt = document.createElement('option');
+                opt.value = cb.value;
+                opt.textContent = cb.dataset.name;
+                opt.selected = true;
+                select.appendChild(opt);
+            }
+            cb.checked = false;
+        });
+    } else if (userModalMode === 'add-member') {
+        for (const cb of checkboxes) {
+            const data = new FormData();
+            data.append('username', username);
+            data.append('team_id', currentTeamId);
+            data.append('new_member', cb.value);
+            await fetch('/teams/add_member', { method: 'POST', body: data });
+            cb.checked = false;
         }
-        cb.checked = false;
-    });
+        viewTeam(currentTeamId);
+        loadTeams();
+    }
     bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
 });
 
