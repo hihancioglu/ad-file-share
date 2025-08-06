@@ -30,6 +30,20 @@ CORS(app)
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+
+def get_unique_filename(directory: str, filename: str) -> str:
+    base, ext = os.path.splitext(filename)
+    candidate = filename
+    counter = 1
+    while os.path.exists(os.path.join(directory, candidate)):
+        candidate = f"{base}_{counter}{ext}"
+        counter += 1
+    return candidate
+
+
+# Track in-progress uploads to handle name collisions for chunked uploads
+current_uploads = {}
+
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 LDAP_USER = os.getenv("LDAP_USER")
@@ -509,14 +523,20 @@ def upload_file():
     if filename and chunk and chunk_index is not None and total_chunks:
         chunk_index = int(chunk_index)
         total_chunks = int(total_chunks)
-        file_path = os.path.join(user_dir, filename)
+        key = (username, filename)
+        if chunk_index == 0:
+            final_name = get_unique_filename(user_dir, filename)
+            current_uploads[key] = final_name
+        final_name = current_uploads.get(key, filename)
+        file_path = os.path.join(user_dir, final_name)
         mode = "wb" if chunk_index == 0 else "ab"
         with open(file_path, mode) as f:
             f.write(chunk.read())
         # If this was the last chunk, respond with completion info
         if chunk_index + 1 == total_chunks:
-            set_file_expiry(username, filename, expires_dt)
-            return jsonify(success=True, filenames=[filename])
+            current_uploads.pop(key, None)
+            set_file_expiry(username, final_name, expires_dt)
+            return jsonify(success=True, filenames=[final_name])
         return jsonify(success=True, chunk_index=chunk_index)
 
     # Fallback to legacy upload for already assembled files
@@ -528,10 +548,11 @@ def upload_file():
     uploaded = []
     for file in files:
         if file and file.filename:
-            file_path = os.path.join(user_dir, file.filename)
+            final_name = get_unique_filename(user_dir, file.filename)
+            file_path = os.path.join(user_dir, final_name)
             file.save(file_path)
-            uploaded.append(file.filename)
-            set_file_expiry(username, file.filename, expires_dt)
+            uploaded.append(final_name)
+            set_file_expiry(username, final_name, expires_dt)
 
     return jsonify(success=True, filenames=uploaded)
 
