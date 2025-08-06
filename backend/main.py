@@ -80,6 +80,44 @@ class TeamFile(Base):
 Base.metadata.create_all(engine)
 
 
+def get_user_names(username: str):
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return "", ""
+        search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
+        conn.search(LDAP_BASE_DN, search_filter, attributes=["givenName", "sn"])
+        if conn.entries:
+            entry = conn.entries[0]
+            given = getattr(entry, "givenName", None)
+            sn = getattr(entry, "sn", None)
+            return (
+                given.value if given else "",
+                sn.value if sn else "",
+            )
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+    return "", ""
+
+
+def get_full_name(username: str):
+    given, sn = get_user_names(username)
+    full_name = f"{given} {sn}".strip()
+    return full_name or username
+
+
 def find_share_token(username: str, filename: str):
     db = SessionLocal()
     try:
@@ -129,7 +167,9 @@ def login():
         )
         if not conn.bind():
             return jsonify(success=False, error="Kullanıcı adı veya şifre hatalı")
-        return jsonify(success=True, username=username)
+        conn.unbind()
+        given, sn = get_user_names(username)
+        return jsonify(success=True, username=username, givenName=given, sn=sn)
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
@@ -486,7 +526,10 @@ def list_teams():
                     "id": t.id,
                     "name": t.name,
                     "creator": t.creator,
-                    "members": [m.username for m in members],
+                    "members": [
+                        {"username": m.username, "name": get_full_name(m.username)}
+                        for m in members
+                    ],
                 }
             )
         return jsonify(teams=data)
@@ -540,7 +583,10 @@ def team_details():
                 "id": team.id,
                 "name": team.name,
                 "creator": team.creator,
-                "members": [m.username for m in members],
+                "members": [
+                    {"username": m.username, "name": get_full_name(m.username)}
+                    for m in members
+                ],
                 "files": [
                     {"filename": f.filename, "username": f.username} for f in files
                 ],

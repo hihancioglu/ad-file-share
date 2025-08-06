@@ -69,7 +69,7 @@
 
         <section id="team-details" class="mt-4 d-none">
             <h2 id="team-title"></h2>
-            <p>Kurucu: <span id="team-creator"></span></p>
+            <h3>Üyeler</h3>
             <ul id="team-members-list" class="list-group mb-3"></ul>
             <div id="add-member-container" class="mb-3">
                 <button id="add-member-btn" class="btn btn-outline-secondary">Kullanıcı Ekle</button>
@@ -121,7 +121,8 @@ if (!username) {
     window.location.href = '/';
 }
 
-document.getElementById('username-display').textContent = username;
+const displayName = localStorage.getItem('name') || username;
+document.getElementById('username-display').textContent = displayName;
 
 const selected = new Set();
 const deleteBtn = document.getElementById('delete-selected');
@@ -276,26 +277,32 @@ async function viewTeam(teamId) {
     const team = json.team;
     currentTeamId = team.id;
     document.getElementById('team-title').textContent = team.name;
-    document.getElementById('team-creator').textContent = team.creator;
     const membersList = document.getElementById('team-members-list');
     membersList.innerHTML = '';
     team.members.forEach(m => {
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
         const span = document.createElement('span');
-        span.textContent = m + (m === team.creator ? ' (Kurucu)' : '');
+        span.textContent = m.name;
         li.appendChild(span);
-        if (m !== team.creator && (username === team.creator || m === username)) {
+        if (m.username === team.creator) {
+            const badge = document.createElement('button');
+            badge.type = 'button';
+            badge.className = 'btn btn-sm btn-warning';
+            badge.textContent = 'Kurucu';
+            badge.disabled = true;
+            li.appendChild(badge);
+        } else if (username === team.creator || m.username === username) {
             const btn = document.createElement('button');
-            btn.className = 'btn btn-sm ' + (m === username ? 'btn-outline-secondary' : 'btn-danger');
-            btn.textContent = m === username ? 'Ayrıl' : 'Sil';
+            btn.className = 'btn btn-sm ' + (m.username === username ? 'btn-outline-secondary' : 'btn-danger');
+            btn.textContent = m.username === username ? 'Ayrıl' : 'Sil';
             btn.addEventListener('click', async () => {
                 const fd = new FormData();
                 fd.append('username', username);
                 fd.append('team_id', team.id);
-                fd.append('member', m);
+                fd.append('member', m.username);
                 await fetch('/teams/remove_member', { method: 'POST', body: fd });
-                if (m === username) {
+                if (m.username === username) {
                     loadTeams();
                     showSection('teams');
                 } else {
@@ -350,7 +357,7 @@ async function loadTeams() {
         li.appendChild(nameSpan);
         const membersSpan = document.createElement('span');
         membersSpan.className = 'ms-2';
-        membersSpan.textContent = `(${team.members.join(', ')})`;
+        membersSpan.textContent = `(${team.members.map(m => m.name).join(', ')})`;
         li.appendChild(membersSpan);
         const btn = document.createElement('button');
         const isCreator = team.creator === username;
