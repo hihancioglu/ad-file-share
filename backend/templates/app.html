@@ -39,6 +39,7 @@
 
         <section id="upload" class="mb-4">
             <h2>Dosya Yükle</h2>
+            <input type="date" id="file-expiry" class="form-control mb-2" required>
             <div id="drop-zone" class="mb-3 border border-primary rounded p-5 text-center" style="cursor: pointer;">
                 Dosyaları buraya sürükleyin veya tıklayın
                 <input type="file" id="file-input" name="files" multiple hidden>
@@ -57,6 +58,7 @@
                         <th></th>
                         <th>Başlık</th>
                         <th>Eklenme Tarihi</th>
+                        <th>Geçerlilik</th>
                         <th>Uzantı</th>
                         <th>Açıklama</th>
                         <th>Boyut</th>
@@ -189,6 +191,11 @@ const sections = {
     'team-details': document.getElementById('team-details')
 };
 
+const expiryInput = document.getElementById('file-expiry');
+const defaultDate = new Date();
+defaultDate.setDate(defaultDate.getDate() + 30);
+expiryInput.value = defaultDate.toISOString().split('T')[0];
+
 function showSection(id) {
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
     const section = sections[id];
@@ -258,6 +265,10 @@ async function loadFiles() {
         const addedTd = document.createElement('td');
         addedTd.textContent = file.added;
         tr.appendChild(addedTd);
+
+        const expTd = document.createElement('td');
+        expTd.textContent = file.expires_at;
+        tr.appendChild(expTd);
 
         const extTd = document.createElement('td');
         extTd.textContent = file.extension;
@@ -686,10 +697,15 @@ fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 async function handleFiles(files) {
     const result = document.getElementById('upload-result');
     result.innerHTML = '';
+    const expiry = document.getElementById('file-expiry').value;
+    if (!expiry) {
+        result.innerHTML = '<div class="alert alert-danger">Geçerlilik tarihi gerekli</div>';
+        return;
+    }
     const uploaded = [];
     for (const file of files) {
         try {
-            await uploadFile(file);
+            await uploadFile(file, expiry);
             uploaded.push(file.name);
         } catch (e) {
             result.innerHTML = '<div class="alert alert-danger">' + (e.message || 'Hata') + '</div>';
@@ -697,11 +713,11 @@ async function handleFiles(files) {
         }
     }
     result.innerHTML += '<div class="alert alert-success">Dosyalar yüklendi</div>';
-    showShareOptions(uploaded, result);
+    showShareOptions(uploaded, result, expiry);
     loadFiles();
 }
 
-function showShareOptions(filenames, container) {
+function showShareOptions(filenames, container, expiry) {
     filenames.forEach(name => {
         const div = document.createElement('div');
         div.className = 'mt-2';
@@ -710,6 +726,7 @@ function showShareOptions(filenames, container) {
         const date = document.createElement('input');
         date.type = 'date';
         date.className = 'form-control d-inline-block w-auto ms-2';
+        date.value = expiry;
         const userBtn = document.createElement('button');
         userBtn.className = 'btn btn-sm btn-primary ms-2';
         userBtn.textContent = 'Kullanıcıya Gönder';
@@ -751,7 +768,7 @@ function showShareOptions(filenames, container) {
     });
 }
 
-async function uploadFile(file) {
+async function uploadFile(file, expiry) {
     const chunkSize = 5 * 1024 * 1024; // 5MB
     const totalChunks = Math.ceil(file.size / chunkSize);
     const bar = createProgressBar(file.name);
@@ -765,6 +782,7 @@ async function uploadFile(file) {
         formData.append('filename', file.name);
         formData.append('chunk_index', i);
         formData.append('total_chunks', totalChunks);
+        formData.append('expires_at', expiry);
         formData.append('file', chunk);
         const res = await fetch('/upload', { method: 'POST', body: formData });
         const json = await res.json();
