@@ -19,3 +19,10 @@ names are searched, set `LDAP_SEARCH_FILTER` in the environment. The string
 should contain a `{query}` placeholder that will be replaced with the incoming
 search text. By default the application uses
 `(&(objectClass=user)(sAMAccountName=*{query}*))`.
+
+For public shares requiring manager approval, the backend sends an e-mail to the
+user's manager. Configure SMTP settings with the following variables:
+
+- `SMTP_SERVER` and `SMTP_PORT`
+- `SMTP_USER` and `SMTP_PASSWORD` if authentication is needed
+- `SMTP_FROM` for the sender address (defaults to `no-reply@example.com`)
