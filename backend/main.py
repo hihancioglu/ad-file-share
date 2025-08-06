@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import msal
 import requests
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, Response
 from flask_cors import CORS
 import ldap3
 from dotenv import load_dotenv
@@ -243,6 +243,41 @@ def get_manager_info(username: str):
         except Exception:
             pass
     return "", ""
+
+
+def authenticate_user(username: str, password: str) -> bool:
+    """Authenticate a user against LDAP."""
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{username}"
+    try:
+        conn = ldap3.Connection(
+            server, user=user_dn, password=password, authentication=ldap3.NTLM
+        )
+        if not conn.bind():
+            return False
+        return True
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
+def require_manager_auth(link):
+    """Ensure the requester is the manager of the link's owner."""
+    auth = request.authorization
+    if not auth or not authenticate_user(auth.username, auth.password):
+        return Response(
+            "Authentication required",
+            401,
+            {"WWW-Authenticate": 'Basic realm="Login Required"'},
+        )
+    manager_user, _ = get_manager_info(link.username)
+    if auth.username != manager_user:
+        return Response("Yetkisiz", 403)
+    return None
 
 
 def send_approval_email(username: str, filename: str, token: str):
@@ -677,6 +712,9 @@ def approve_share(token):
         link = db.query(ShareLink).filter_by(token=token).first()
         if not link:
             return render_template("message.html", message="Geçersiz bağlantı")
+        auth_resp = require_manager_auth(link)
+        if auth_resp:
+            return auth_resp
         link.approved = True
         link.rejected = False
         db.commit()
@@ -692,6 +730,9 @@ def reject_share(token):
         link = db.query(ShareLink).filter_by(token=token).first()
         if not link:
             return render_template("message.html", message="Geçersiz bağlantı")
+        auth_resp = require_manager_auth(link)
+        if auth_resp:
+            return auth_resp
         link.rejected = True
         link.approved = False
         db.commit()
