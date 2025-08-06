@@ -51,6 +51,7 @@
             <h2>Dosyalarım</h2>
             <button id="delete-selected" class="btn btn-danger mb-2 me-2" disabled>Sil</button>
             <button id="share-selected" class="btn btn-primary mb-2 me-2" disabled>Kullanıcıya Gönder</button>
+            <button id="public-share" class="btn btn-outline-primary mb-2 me-2" disabled>Paylaş</button>
             <button id="add-to-team" class="btn btn-secondary mb-2" disabled>Gruba Ekle</button>
             <table id="file-table" class="table">
                 <thead>
@@ -155,6 +156,23 @@
   </div>
 </div>
 
+<div class="modal fade" id="linkModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Paylaşım Linki</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="share-link-input" class="form-control" readonly>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="copy-link">Copy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const username = localStorage.getItem('username');
@@ -174,6 +192,9 @@ const selected = new Set();
 const deleteBtn = document.getElementById('delete-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
+const publicShareBtn = document.getElementById('public-share');
+const linkInput = document.getElementById('share-link-input');
+const copyLinkBtn = document.getElementById('copy-link');
 let teams = [];
 let currentTeamId = null;
 let userModalMode = 'create';
@@ -229,6 +250,7 @@ function updateActionButtons() {
     deleteBtn.disabled = disabled;
     shareBtn.disabled = disabled;
     addToTeamBtn.disabled = disabled;
+    publicShareBtn.disabled = disabled || selected.size !== 1;
 }
 
 async function loadFiles() {
@@ -260,6 +282,17 @@ async function loadFiles() {
 
         const titleTd = document.createElement('td');
         titleTd.textContent = file.title;
+        if (file.link) {
+            const linkBtn = document.createElement('button');
+            linkBtn.className = 'btn btn-sm btn-outline-primary ms-2';
+            linkBtn.textContent = 'Link';
+            linkBtn.addEventListener('click', () => {
+                linkInput.value = window.location.origin + file.link;
+                const modal = new bootstrap.Modal(document.getElementById('linkModal'));
+                modal.show();
+            });
+            titleTd.appendChild(linkBtn);
+        }
         tr.appendChild(titleTd);
 
         const addedTd = document.createElement('td');
@@ -355,6 +388,21 @@ deleteBtn.addEventListener('click', async () => {
     await loadFiles();
 });
 
+publicShareBtn.addEventListener('click', async () => {
+    const filename = Array.from(selected)[0];
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('filename', filename);
+    const res = await fetch('/share', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.success) {
+        linkInput.value = window.location.origin + json.link;
+        const modal = new bootstrap.Modal(document.getElementById('linkModal'));
+        modal.show();
+        await loadFiles();
+    }
+});
+
 addToTeamBtn.addEventListener('click', () => {
     teamModalMode = 'add-files';
     const select = document.getElementById('team-select');
@@ -367,6 +415,10 @@ addToTeamBtn.addEventListener('click', () => {
     });
     const modal = new bootstrap.Modal(document.getElementById('teamModal'));
     modal.show();
+});
+
+copyLinkBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(linkInput.value);
 });
 
 shareBtn.addEventListener('click', async () => {
