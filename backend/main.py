@@ -5,7 +5,16 @@ from datetime import datetime, timedelta
 import msal
 import requests
 
-from flask import Flask, jsonify, render_template, request, send_file, Response
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    Response,
+    session,
+    redirect,
+)
 from flask_cors import CORS
 import ldap3
 from dotenv import load_dotenv
@@ -25,6 +34,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
 CORS(app)
 
 DATA_DIR = "data"
@@ -267,15 +277,11 @@ def authenticate_user(username: str, password: str) -> bool:
 
 def require_manager_auth(link):
     """Ensure the requester is the manager of the link's owner."""
-    auth = request.authorization
-    if not auth or not authenticate_user(auth.username, auth.password):
-        return Response(
-            "Authentication required",
-            401,
-            {"WWW-Authenticate": 'Basic realm="Login Required"'},
-        )
+    user = session.get("username")
+    if not user:
+        return redirect(f"/?next={request.path}")
     manager_user, _ = get_manager_info(link.username)
-    if auth.username != manager_user:
+    if user != manager_user:
         return Response("Yetkisiz", 403)
     return None
 
@@ -427,6 +433,7 @@ def login():
         if not conn.bind():
             return jsonify(success=False, error="Kullanıcı adı veya şifre hatalı")
         conn.unbind()
+        session["username"] = username
         given, sn = get_user_names(username)
         return jsonify(success=True, username=username, givenName=given, sn=sn)
     except Exception as e:
