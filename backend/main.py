@@ -829,6 +829,8 @@ def preview_file(token):
         if auth_resp:
             return auth_resp
         file_path = os.path.join(DATA_DIR, link.username, link.filename)
+        if not os.path.exists(file_path):
+            return "", 404
         if request.args.get("list") == "1":
             if zipfile.is_zipfile(file_path):
                 with zipfile.ZipFile(file_path) as zf:
