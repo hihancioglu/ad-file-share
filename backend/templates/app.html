@@ -485,6 +485,9 @@ function showSection(id) {
     const section = sections[id];
     if (section) {
         section.classList.remove('d-none');
+        if (id !== 'team-details') {
+            window.location.hash = id;
+        }
         if (id === 'files') {
             loadFiles();
         } else if (id === 'incoming') {
@@ -1024,6 +1027,7 @@ async function viewTeam(teamId) {
     }
     const team = json.team;
     currentTeamId = team.id;
+    window.location.hash = `team-${team.id}`;
     document.getElementById('team-title').textContent = team.name;
     const membersList = document.getElementById('team-members-list');
     membersList.innerHTML = '';
@@ -1164,7 +1168,14 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 
 loadTeams();
 loadPending();
-showSection('upload');
+const initialHash = window.location.hash ? window.location.hash.substring(1) : '';
+if (initialHash.startsWith('team-')) {
+    const teamId = initialHash.substring(5);
+    viewTeam(teamId);
+} else {
+    const initialSection = initialHash || 'upload';
+    showSection(initialSection);
+}
 
 document.getElementById('load-users').addEventListener('click', async () => {
     userModalMode = 'create';
