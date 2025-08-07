@@ -77,6 +77,14 @@
 
         <section id="files">
             <h2>Dosyalarım</h2>
+            <div class="d-flex mb-2">
+                <input type="text" id="file-search" class="form-control me-2" placeholder="Ara...">
+                <select id="page-size" class="form-select" style="width:auto;">
+                    <option value="15" selected>15</option>
+                    <option value="30">30</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
             <button id="delete-selected" class="btn btn-danger mb-2 me-2" disabled>Sil</button>
             <button id="share-selected" class="btn btn-primary mb-2 me-2" disabled>Kullanıcıya Gönder</button>
             <button id="public-share" class="btn btn-outline-primary mb-2 me-2" disabled>Paylaş</button>
@@ -85,16 +93,19 @@
                 <thead>
                     <tr>
                         <th></th>
-                        <th>Başlık</th>
-                        <th>Eklenme Tarihi</th>
-                        <th>Geçerlilik</th>
-                        <th>Uzantı</th>
-                        <th>Açıklama</th>
-                        <th>Boyut</th>
+                        <th data-field="title">Başlık</th>
+                        <th data-field="added">Eklenme Tarihi</th>
+                        <th data-field="expires_at">Geçerlilik</th>
+                        <th data-field="extension">Uzantı</th>
+                        <th data-field="description">Açıklama</th>
+                        <th data-field="size">Boyut</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             </table>
+            <nav>
+                <ul id="file-pagination" class="pagination"></ul>
+            </nav>
         </section>
 
         <section id="incoming" class="d-none">
@@ -270,12 +281,19 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 const STORAGE_KEY = 'selectedFiles';
 const selected = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
 function updateSelectedStorage() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(selected)));
+    if (!adminMode) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(selected)));
+    }
 }
 const deleteBtn = document.getElementById('delete-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 const publicShareBtn = document.getElementById('public-share');
+const searchInput = document.getElementById('file-search');
+const pageSizeSelect = document.getElementById('page-size');
+const pagination = document.getElementById('file-pagination');
+let currentPage = 1;
+let currentSort = { field: null, dir: 1 };
 let teams = [];
 let currentTeamId = null;
 let userModalMode = 'create';
@@ -295,6 +313,30 @@ const sections = {
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details')
 };
+
+searchInput.addEventListener('input', () => {
+    currentPage = 1;
+    renderFiles();
+});
+
+pageSizeSelect.addEventListener('change', () => {
+    currentPage = 1;
+    renderFiles();
+});
+
+document.querySelectorAll('#file-table thead th[data-field]').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+        const field = th.dataset.field;
+        if (currentSort.field === field) {
+            currentSort.dir *= -1;
+        } else {
+            currentSort.field = field;
+            currentSort.dir = 1;
+        }
+        renderFiles();
+    });
+});
 
 
 async function loadNotifications() {
@@ -477,6 +519,13 @@ document.addEventListener('click', (e) => {
 function updateActionButtons() {
     const disabled = selected.size === 0;
     deleteBtn.disabled = disabled;
+    if (adminMode) {
+        shareBtn.disabled = true;
+        addToTeamBtn.disabled = true;
+        publicShareBtn.disabled = true;
+        publicShareBtn.textContent = 'Paylaş';
+        return;
+    }
     shareBtn.disabled = disabled;
     addToTeamBtn.disabled = disabled;
     publicShareBtn.disabled = disabled || selected.size !== 1;
@@ -495,48 +544,122 @@ function updateActionButtons() {
     publicShareBtn.textContent = label;
 }
 
-async function loadFiles() {
-    const formData = new FormData();
-    formData.append('username', username);
-    if (adminMode) {
-        formData.append('admin', '1');
+function renderPagination(totalPages) {
+    pagination.innerHTML = '';
+    const prevLi = document.createElement('li');
+    prevLi.className = 'page-item' + (currentPage === 1 ? ' disabled' : '');
+    const prevLink = document.createElement('a');
+    prevLink.className = 'page-link';
+    prevLink.href = '#';
+    prevLink.textContent = 'Önceki';
+    prevLink.addEventListener('click', e => {
+        e.preventDefault();
+        if (currentPage > 1) {
+            currentPage--;
+            renderFiles();
+        }
+    });
+    prevLi.appendChild(prevLink);
+    pagination.appendChild(prevLi);
+
+    for (let i = 1; i <= totalPages; i++) {
+        const li = document.createElement('li');
+        li.className = 'page-item' + (currentPage === i ? ' active' : '');
+        const a = document.createElement('a');
+        a.className = 'page-link';
+        a.href = '#';
+        a.textContent = i;
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            currentPage = i;
+            renderFiles();
+        });
+        li.appendChild(a);
+        pagination.appendChild(li);
     }
-    const res = await fetch('/list', { method: 'POST', body: formData });
-    const json = await res.json();
-    currentFiles = json.files;
+
+    const nextLi = document.createElement('li');
+    nextLi.className = 'page-item' + (currentPage === totalPages ? ' disabled' : '');
+    const nextLink = document.createElement('a');
+    nextLink.className = 'page-link';
+    nextLink.href = '#';
+    nextLink.textContent = 'Sonraki';
+    nextLink.addEventListener('click', e => {
+        e.preventDefault();
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderFiles();
+        }
+    });
+    nextLi.appendChild(nextLink);
+    pagination.appendChild(nextLi);
+}
+
+function renderFiles() {
+    const term = searchInput.value.toLowerCase();
+    let files = currentFiles.filter(f => {
+        const values = [
+            f.title,
+            f.added,
+            f.expires_at,
+            f.public_expires_at,
+            f.extension,
+            f.description,
+            f.size,
+            f.username
+        ].map(v => (v || '').toString().toLowerCase());
+        return values.some(v => v.includes(term));
+    });
+    if (currentSort.field) {
+        files.sort((a, b) => {
+            let av, bv;
+            if (currentSort.field === 'expires_at') {
+                av = a.public_expires_at || a.expires_at || '';
+                bv = b.public_expires_at || b.expires_at || '';
+            } else if (currentSort.field === 'title') {
+                av = adminMode ? `${a.username} - ${a.title}` : a.title;
+                bv = adminMode ? `${b.username} - ${b.title}` : b.title;
+            } else {
+                av = a[currentSort.field] || '';
+                bv = b[currentSort.field] || '';
+            }
+            if (currentSort.field === 'size') {
+                av = Number(av);
+                bv = Number(bv);
+            } else {
+                av = av.toString().toLowerCase();
+                bv = bv.toString().toLowerCase();
+            }
+            if (av < bv) return -1 * currentSort.dir;
+            if (av > bv) return 1 * currentSort.dir;
+            return 0;
+        });
+    }
+    const size = parseInt(pageSizeSelect.value);
+    const totalPages = Math.max(1, Math.ceil(files.length / size));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = (currentPage - 1) * size;
+    const pageFiles = files.slice(start, start + size);
     const tbody = document.querySelector('#file-table tbody');
     tbody.innerHTML = '';
-    if (adminMode) {
-        selected.clear();
-        updateSelectedStorage();
-    } else {
-        selected.forEach(value => {
-            if (!json.files.some(f => f.title === value)) {
-                selected.delete(value);
-            }
-        });
-        updateSelectedStorage();
-    }
-    json.files.forEach(file => {
+    pageFiles.forEach(file => {
         const tr = document.createElement('tr');
 
         const cbTd = document.createElement('td');
-        if (!adminMode) {
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.value = file.title;
-            cb.checked = selected.has(file.title);
-            cb.addEventListener('change', () => {
-                if (cb.checked) {
-                    selected.add(cb.value);
-                } else {
-                    selected.delete(cb.value);
-                }
-                updateSelectedStorage();
-                updateActionButtons();
-            });
-            cbTd.appendChild(cb);
-        }
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = adminMode ? `${file.username}|${file.title}` : file.title;
+        cb.checked = selected.has(cb.value);
+        cb.addEventListener('change', () => {
+            if (cb.checked) {
+                selected.add(cb.value);
+            } else {
+                selected.delete(cb.value);
+            }
+            updateSelectedStorage();
+            updateActionButtons();
+        });
+        cbTd.appendChild(cb);
         tr.appendChild(cbTd);
 
         const titleTd = document.createElement('td');
@@ -608,8 +731,32 @@ async function loadFiles() {
         tbody.appendChild(tr);
     });
 
+    renderPagination(totalPages);
     updateActionButtons();
+}
 
+async function loadFiles() {
+    const formData = new FormData();
+    formData.append('username', username);
+    if (adminMode) {
+        formData.append('admin', '1');
+    }
+    const res = await fetch('/list', { method: 'POST', body: formData });
+    const json = await res.json();
+    currentFiles = json.files;
+    if (adminMode) {
+        selected.clear();
+        updateSelectedStorage();
+    } else {
+        selected.forEach(value => {
+            if (!json.files.some(f => f.title === value)) {
+                selected.delete(value);
+            }
+        });
+        updateSelectedStorage();
+    }
+    currentPage = 1;
+    renderFiles();
     if (json.files.some(f => f.link && !f.approved)) {
         setTimeout(loadFiles, 5000);
     }
@@ -753,10 +900,16 @@ async function loadPending() {
 }
 
 deleteBtn.addEventListener('click', async () => {
-    for (const filename of selected) {
+    for (const value of selected) {
         const formData = new FormData();
-        formData.append('username', username);
-        formData.append('filename', filename);
+        if (adminMode) {
+            const [user, filename] = value.split('|');
+            formData.append('username', user);
+            formData.append('filename', filename);
+        } else {
+            formData.append('username', username);
+            formData.append('filename', value);
+        }
         await fetch('/delete', { method: 'POST', body: formData });
     }
     await loadFiles();
