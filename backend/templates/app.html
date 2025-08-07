@@ -465,6 +465,24 @@ async function loadPending() {
         const tr = document.createElement('tr');
         const fileTd = document.createElement('td');
         fileTd.textContent = item.filename;
+        const ext = item.filename.split('.').pop().toLowerCase();
+        if (['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) {
+            const content = `<iframe src="/preview/${item.token}" style="width:400px;height:300px;"></iframe>`;
+            new bootstrap.Popover(fileTd, { trigger: 'hover', html: true, sanitize: false, placement: 'right', content });
+            fileTd.style.cursor = 'pointer';
+        } else if (['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'].includes(ext)) {
+            fileTd.style.cursor = 'pointer';
+            let pop = null;
+            fileTd.addEventListener('mouseenter', async () => {
+                if (!pop) {
+                    const res = await fetch(`/preview/${item.token}?list=1`);
+                    const data = await res.json();
+                    const html = `<ul class="mb-0">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
+                    pop = new bootstrap.Popover(fileTd, { trigger: 'hover', html: true, sanitize: false, placement: 'right', content: html });
+                    pop.show();
+                }
+            });
+        }
         tr.appendChild(fileTd);
         const userTd = document.createElement('td');
         userTd.textContent = item.username;
