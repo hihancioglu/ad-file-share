@@ -30,9 +30,14 @@
     </nav>
 
     <div class="flex-grow-1 p-3">
-        <div class="d-flex align-items-center mb-3">
+        <div class="d-flex align-items-center mb-3 position-relative">
             <h1 class="me-3 mb-0">Hoş geldin, <span id="username-display"></span></h1>
+            <div class="me-3 position-relative" id="notif-container" style="cursor:pointer;">
+                <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
+                <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
+            </div>
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
+            <div id="notif-list" class="list-group position-absolute d-none" style="top:3rem; right:0; z-index:1000; max-height:300px; overflow:auto;"></div>
         </div>
 
         <section id="upload" class="mb-4" style="max-width: 50%;">
@@ -250,6 +255,7 @@ let shareFileName = null;
 let shareFileNames = [];
 let shareExpiry = '';
 let currentFiles = [];
+let notifications = [];
 
 const sections = {
     upload: document.getElementById('upload'),
@@ -261,6 +267,72 @@ const sections = {
     'team-details': document.getElementById('team-details')
 };
 
+
+async function loadNotifications() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/notifications', { method: 'POST', body: fd });
+    const json = await res.json();
+    notifications = json.notifications;
+    const unread = notifications.filter(n => !n.read);
+    const countElem = document.getElementById('notif-count');
+    const bell = document.getElementById('notif-bell');
+    if (unread.length > 0) {
+        countElem.textContent = unread.length;
+        countElem.classList.remove('d-none');
+        bell.classList.remove('bi-bell');
+        bell.classList.add('bi-bell-fill');
+    } else {
+        countElem.classList.add('d-none');
+        bell.classList.add('bi-bell');
+        bell.classList.remove('bi-bell-fill');
+    }
+}
+
+async function markNotificationsRead(ids) {
+    const fd = new FormData();
+    fd.append('username', username);
+    ids.forEach(id => fd.append('ids[]', id));
+    await fetch('/notifications/read', { method: 'POST', body: fd });
+}
+
+document.getElementById('notif-container').addEventListener('click', async () => {
+    const list = document.getElementById('notif-list');
+    list.classList.toggle('d-none');
+    list.innerHTML = '';
+    notifications.forEach(n => {
+        const item = document.createElement('div');
+        item.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const span = document.createElement('span');
+        span.textContent = n.message;
+        item.appendChild(span);
+        if (n.team_id && !n.read) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-success';
+            btn.textContent = 'Kabul Et';
+            btn.addEventListener('click', async () => {
+                const fd = new FormData();
+                fd.append('username', username);
+                fd.append('team_id', n.team_id);
+                await fetch('/teams/accept', { method: 'POST', body: fd });
+                await markNotificationsRead([n.id]);
+                loadTeams();
+                viewTeam(n.team_id);
+                loadNotifications();
+            });
+            item.appendChild(btn);
+        }
+        list.appendChild(item);
+    });
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length > 0) {
+        await markNotificationsRead(unreadIds);
+        loadNotifications();
+    }
+});
+
+loadNotifications();
+setInterval(loadNotifications, 30000);
 
 function showSection(id) {
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
@@ -684,6 +756,9 @@ async function viewTeam(teamId) {
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
         const span = document.createElement('span');
         span.textContent = m.name;
+        if (!m.accepted) {
+            span.textContent += ' (Kabul Bekleniyor)';
+        }
         li.appendChild(span);
         if (m.username === team.creator) {
             const badge = document.createElement('button');
@@ -692,6 +767,19 @@ async function viewTeam(teamId) {
             badge.textContent = 'Kurucu';
             badge.disabled = true;
             li.appendChild(badge);
+        } else if (m.username === username && !m.accepted) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-success';
+            btn.textContent = 'Kabul Et';
+            btn.addEventListener('click', async () => {
+                const fd = new FormData();
+                fd.append('username', username);
+                fd.append('team_id', team.id);
+                await fetch('/teams/accept', { method: 'POST', body: fd });
+                loadTeams();
+                viewTeam(team.id);
+            });
+            li.appendChild(btn);
         } else if (username === team.creator || m.username === username) {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm ' + (m.username === username ? 'btn-outline-secondary' : 'btn-danger');
