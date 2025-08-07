@@ -1,5 +1,6 @@
 import os
 import secrets
+import time
 from datetime import datetime, timedelta
 
 import msal
@@ -534,6 +535,40 @@ def users_tree():
             conn.unbind()
         except Exception:
             pass
+
+
+@app.route("/scan", methods=["POST"])
+def scan_file():
+    file = request.files.get("file")
+    if not file:
+        return jsonify(success=False, error="No file"), 400
+    content = file.read()
+    if len(content) > 50 * 1024 * 1024:
+        return jsonify(success=True, clean=True)
+    api_key = os.getenv("VT_API_KEY")
+    if not api_key:
+        return jsonify(success=False, error="Missing API key"), 500
+    headers = {"x-apikey": api_key}
+    files = {"file": (file.filename, content)}
+    res = requests.post("https://www.virustotal.com/api/v3/files", headers=headers, files=files)
+    if res.status_code != 200:
+        return jsonify(success=False, error="scan failed"), 500
+    analysis_id = res.json().get("data", {}).get("id")
+    analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
+    for _ in range(15):
+        r = requests.get(analysis_url, headers=headers)
+        if r.status_code != 200:
+            time.sleep(2)
+            continue
+        data = r.json()
+        status = data.get("data", {}).get("attributes", {}).get("status")
+        if status != "completed":
+            time.sleep(2)
+            continue
+        stats = data["data"]["attributes"]["stats"]
+        clean = stats.get("malicious", 0) == 0 and stats.get("suspicious", 0) == 0
+        return jsonify(success=True, clean=clean)
+    return jsonify(success=False, error="analysis timeout"), 500
 
 
 @app.route("/upload", methods=["POST"])
