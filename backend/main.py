@@ -115,6 +115,7 @@ class TeamMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     team_id = Column(Integer, ForeignKey("teams.id"), index=True)
     username = Column(String, index=True)
+    accepted = Column(Boolean, default=False)
 
 
 class TeamFile(Base):
@@ -126,6 +127,16 @@ class TeamFile(Base):
     filename = Column(String)
     expires_at = Column(DateTime)
 
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    message = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    read = Column(Boolean, default=False)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
 
 class UserShare(Base):
     __tablename__ = "user_shares"
@@ -173,6 +184,15 @@ def add_missing_columns():
             conn.execute(
                 text(
                     "ALTER TABLE share_links ADD COLUMN rejected BOOLEAN DEFAULT FALSE"
+            )
+        )
+
+    member_cols = [col["name"] for col in inspector.get_columns("team_members")]
+    if "accepted" not in member_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE team_members ADD COLUMN accepted BOOLEAN DEFAULT FALSE"
                 )
             )
 
@@ -216,6 +236,15 @@ def get_full_name(username: str):
     given, sn = get_user_names(username)
     full_name = f"{given} {sn}".strip()
     return full_name or username
+
+
+def create_notification(username: str, message: str, team_id=None):
+    db = SessionLocal()
+    try:
+        db.add(Notification(username=username, message=message, team_id=team_id))
+        db.commit()
+    finally:
+        db.close()
 
 
 def get_manager_info(username: str):
@@ -705,6 +734,12 @@ def share_file():
             expires_at = datetime.utcnow() + timedelta(days=int(days))
         create_share_link(token, username, filename, expires_at)
         send_approval_email(username, filename, token)
+        mgr_user, _ = get_manager_info(username)
+        if mgr_user:
+            create_notification(
+                mgr_user,
+                f"'{filename}' dosyası için onay bekleyen paylaşım",
+            )
     return jsonify(success=True, link=f"/public/{token}")
 
 
@@ -729,6 +764,10 @@ def approve_share(token):
         link.approved = True
         link.rejected = False
         db.commit()
+        create_notification(
+            link.username,
+            f"'{link.filename}' paylaşımı onaylandı",
+        )
         return render_template("message.html", message="Paylaşım onaylandı")
     finally:
         db.close()
@@ -747,6 +786,10 @@ def reject_share(token):
         link.rejected = True
         link.approved = False
         db.commit()
+        create_notification(
+            link.username,
+            f"'{link.filename}' paylaşımı reddedildi",
+        )
         return render_template("message.html", message="Paylaşım reddedildi")
     finally:
         db.close()
@@ -1013,9 +1056,14 @@ def create_team():
         db.add(team)
         db.commit()
         db.refresh(team)
-        db.add(TeamMember(team_id=team.id, username=username))
+        db.add(TeamMember(team_id=team.id, username=username, accepted=True))
         for m in member_list:
-            db.add(TeamMember(team_id=team.id, username=m))
+            db.add(TeamMember(team_id=team.id, username=m, accepted=False))
+            create_notification(
+                m,
+                f"'{team_name}' ekibine katılma daveti",
+                team_id=team.id,
+            )
         db.commit()
         return jsonify(success=True, team_id=team.id)
     finally:
@@ -1105,7 +1153,11 @@ def list_teams():
                     "name": t.name,
                     "creator": t.creator,
                     "members": [
-                        {"username": m.username, "name": get_full_name(m.username)}
+                        {
+                            "username": m.username,
+                            "name": get_full_name(m.username),
+                            "accepted": m.accepted,
+                        }
                         for m in members
                     ],
                 }
@@ -1171,7 +1223,11 @@ def team_details():
                 "name": team.name,
                 "creator": team.creator,
                 "members": [
-                    {"username": m.username, "name": get_full_name(m.username)}
+                    {
+                        "username": m.username,
+                        "name": get_full_name(m.username),
+                        "accepted": m.accepted,
+                    }
                     for m in members
                 ],
                 "files": [
@@ -1202,8 +1258,76 @@ def add_member_to_team():
         )
         if exists:
             return jsonify(success=False, error="Kullanıcı zaten ekipte")
-        db.add(TeamMember(team_id=team_id, username=new_member))
+        db.add(TeamMember(team_id=team_id, username=new_member, accepted=False))
         db.commit()
+        create_notification(
+            new_member,
+            f"'{team.name}' ekibine katılma daveti",
+            team_id=team.id,
+        )
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/teams/accept", methods=["POST"])
+def accept_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        if not membership:
+            return jsonify(success=False, error="Ekip bulunamadı")
+        membership.accepted = True
+        db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/notifications", methods=["POST"])
+def notifications():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        notifs = (
+            db.query(Notification)
+            .filter_by(username=username)
+            .order_by(Notification.created_at.desc())
+            .all()
+        )
+        data = [
+            {
+                "id": n.id,
+                "message": n.message,
+                "created_at": n.created_at.strftime("%Y-%m-%d %H:%M"),
+                "read": n.read,
+                "team_id": n.team_id,
+            }
+            for n in notifs
+        ]
+        return jsonify(notifications=data)
+    finally:
+        db.close()
+
+
+@app.route("/notifications/read", methods=["POST"])
+def read_notifications():
+    username = request.form.get("username")
+    ids = request.form.getlist("ids[]") or request.form.getlist("ids")
+    db = SessionLocal()
+    try:
+        if ids:
+            q = db.query(Notification).filter(
+                Notification.username == username, Notification.id.in_(ids)
+            )
+            q.update({"read": True}, synchronize_session=False)
+            db.commit()
         return jsonify(success=True)
     finally:
         db.close()
