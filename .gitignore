@@ -8,6 +8,7 @@ __pycache__/
 # Env/config
 .env
 .env.*
+!backend/.env
 *.log
 
 # Data, DB, Volumes

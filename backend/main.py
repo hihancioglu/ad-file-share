@@ -67,6 +67,14 @@ LDAP_SEARCH_FILTER = os.getenv(
 # Only expose these OUs in the user selection tree
 ALLOWED_OUS = {"BAYLAN3", "BAYLAN4", "BAYLAN5"}
 
+ADMIN_USERS = {
+    u.strip() for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()
+}
+
+
+def is_admin(username: str) -> bool:
+    return username in ADMIN_USERS
+
 GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
 GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID")
 GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET")
@@ -468,7 +476,13 @@ def login():
         conn.unbind()
         session["username"] = username
         given, sn = get_user_names(username)
-        return jsonify(success=True, username=username, givenName=given, sn=sn)
+        return jsonify(
+            success=True,
+            username=username,
+            givenName=given,
+            sn=sn,
+            admin=is_admin(username),
+        )
     except Exception as e:
         return jsonify(success=False, error=str(e))
 
@@ -635,26 +649,79 @@ def upload_file():
 @app.route("/list", methods=["POST"])
 def list_files():
     username = request.form.get("username")
-    user_dir = os.path.join(DATA_DIR, username)
-    if not os.path.exists(user_dir):
-        return jsonify(files=[])
+    admin_mode = request.form.get("admin") and is_admin(username)
+    if not admin_mode:
+        user_dir = os.path.join(DATA_DIR, username)
+        if not os.path.exists(user_dir):
+            return jsonify(files=[])
+
+        db = SessionLocal()
+        try:
+            metas = {
+                m.filename: m.expires_at
+                for m in db.query(UserFile).filter_by(username=username).all()
+            }
+            now = datetime.utcnow()
+            links = {
+                l.filename: {
+                    "token": l.token,
+                    "expires_at": l.expires_at,
+                    "approved": l.approved,
+                    "rejected": l.rejected,
+                }
+                for l in db.query(ShareLink)
+                .filter_by(username=username)
+                .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
+                .all()
+            }
+        finally:
+            db.close()
+
+        files = []
+        for filename in os.listdir(user_dir):
+            file_path = os.path.join(user_dir, filename)
+            stat = os.stat(file_path)
+            exp = metas.get(filename)
+            link_info = links.get(filename, {})
+            token = link_info.get("token")
+            link_exp = link_info.get("expires_at")
+            approved = link_info.get("approved", False)
+            rejected = link_info.get("rejected", False)
+            files.append(
+                {
+                    "title": filename,
+                    "added": datetime.fromtimestamp(stat.st_mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "extension": os.path.splitext(filename)[1].lstrip("."),
+                    "description": "",
+                    "size": stat.st_size,
+                    "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
+                    "public_expires_at": link_exp.strftime("%Y-%m-%d")
+                    if link_exp
+                    else "",
+                    "link": f"/public/{token}" if token and not rejected else "",
+                    "approved": approved,
+                    "rejected": rejected,
+                }
+            )
+        return jsonify(files=files)
 
     db = SessionLocal()
     try:
         metas = {
-            m.filename: m.expires_at
-            for m in db.query(UserFile).filter_by(username=username).all()
+            (m.username, m.filename): m.expires_at
+            for m in db.query(UserFile).all()
         }
         now = datetime.utcnow()
         links = {
-            l.filename: {
+            (l.username, l.filename): {
                 "token": l.token,
                 "expires_at": l.expires_at,
                 "approved": l.approved,
                 "rejected": l.rejected,
             }
             for l in db.query(ShareLink)
-            .filter_by(username=username)
             .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
             .all()
         }
@@ -662,32 +729,38 @@ def list_files():
         db.close()
 
     files = []
-    for filename in os.listdir(user_dir):
-        file_path = os.path.join(user_dir, filename)
-        stat = os.stat(file_path)
-        exp = metas.get(filename)
-        link_info = links.get(filename, {})
-        token = link_info.get("token")
-        link_exp = link_info.get("expires_at")
-        approved = link_info.get("approved", False)
-        rejected = link_info.get("rejected", False)
-        files.append(
-            {
-                "title": filename,
-                "added": datetime.fromtimestamp(stat.st_mtime).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "extension": os.path.splitext(filename)[1].lstrip("."),
-                "description": "",
-                "size": stat.st_size,
-                "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
-                "public_expires_at": link_exp.strftime("%Y-%m-%d") if link_exp else "",
-                "link": f"/public/{token}" if token and not rejected else "",
-                "approved": approved,
-                "rejected": rejected,
-            }
-        )
-
+    for user in os.listdir(DATA_DIR):
+        user_dir = os.path.join(DATA_DIR, user)
+        if not os.path.isdir(user_dir):
+            continue
+        for filename in os.listdir(user_dir):
+            file_path = os.path.join(user_dir, filename)
+            stat = os.stat(file_path)
+            exp = metas.get((user, filename))
+            link_info = links.get((user, filename), {})
+            token = link_info.get("token")
+            link_exp = link_info.get("expires_at")
+            approved = link_info.get("approved", False)
+            rejected = link_info.get("rejected", False)
+            files.append(
+                {
+                    "title": filename,
+                    "username": user,
+                    "added": datetime.fromtimestamp(stat.st_mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "extension": os.path.splitext(filename)[1].lstrip("."),
+                    "description": "",
+                    "size": stat.st_size,
+                    "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
+                    "public_expires_at": link_exp.strftime("%Y-%m-%d")
+                    if link_exp
+                    else "",
+                    "link": f"/public/{token}" if token and not rejected else "",
+                    "approved": approved,
+                    "rejected": rejected,
+                }
+            )
     return jsonify(files=files)
 
 
@@ -1081,7 +1154,7 @@ def delete_team():
         team = db.query(Team).filter_by(id=team_id).first()
         if not team:
             return jsonify(success=False, error="Ekip bulunamadı")
-        if team.creator != username:
+        if team.creator != username and not is_admin(username):
             return jsonify(success=False, error="Yetkiniz yok")
         db.query(TeamMember).filter_by(team_id=team_id).delete()
         db.query(TeamFile).filter_by(team_id=team_id).delete()
@@ -1142,11 +1215,15 @@ def remove_member():
 @app.route("/teams/list", methods=["POST"])
 def list_teams():
     username = request.form.get("username")
+    admin_mode = request.form.get("admin") and is_admin(username)
     db = SessionLocal()
     try:
-        memberships = db.query(TeamMember).filter_by(username=username).all()
-        team_ids = [m.team_id for m in memberships]
-        teams = db.query(Team).filter(Team.id.in_(team_ids)).all()
+        if admin_mode:
+            teams = db.query(Team).all()
+        else:
+            memberships = db.query(TeamMember).filter_by(username=username).all()
+            team_ids = [m.team_id for m in memberships]
+            teams = db.query(Team).filter(Team.id.in_(team_ids)).all()
         data = []
         for t in teams:
             members = db.query(TeamMember).filter_by(team_id=t.id).all()
@@ -1184,7 +1261,7 @@ def add_files_to_team():
             .filter_by(team_id=team_id, username=username)
             .first()
         )
-        if not membership:
+        if not membership and not is_admin(username):
             return jsonify(success=False, error="Yetkiniz yok")
         for fname in filenames:
             db.add(
@@ -1215,7 +1292,7 @@ def team_details():
             .filter_by(team_id=team_id, username=username)
             .first()
         )
-        if not membership:
+        if not membership and not is_admin(username):
             return jsonify(success=False, error="Yetkiniz yok")
         members = db.query(TeamMember).filter_by(team_id=team_id).all()
         files = db.query(TeamFile).filter_by(team_id=team_id).all()

@@ -46,6 +46,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         if (json.givenName) {
             localStorage.setItem('name', json.givenName);
         }
+        if (json.admin) {
+            localStorage.setItem('admin', '1');
+        } else {
+            localStorage.removeItem('admin');
+        }
         window.location.href = next || '/';
     } else {
         document.getElementById('login-error').textContent = json.error || 'Giriş başarısız';
