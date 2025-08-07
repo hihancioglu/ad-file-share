@@ -1061,7 +1061,7 @@ def create_team():
             db.add(TeamMember(team_id=team.id, username=m, accepted=False))
             create_notification(
                 m,
-                f"'{team_name}' ekibine katılma daveti",
+                f"{username} adlı kullanıcı seni {team_name} ekibine davet etti.",
                 team_id=team.id,
             )
         db.commit()
@@ -1262,7 +1262,7 @@ def add_member_to_team():
         db.commit()
         create_notification(
             new_member,
-            f"'{team.name}' ekibine katılma daveti",
+            f"{username} adlı kullanıcı seni {team.name} ekibine davet etti.",
             team_id=team.id,
         )
         return jsonify(success=True)
@@ -1285,6 +1285,25 @@ def accept_team():
             return jsonify(success=False, error="Ekip bulunamadı")
         membership.accepted = True
         db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/teams/reject", methods=["POST"])
+def reject_team():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        if membership:
+            db.delete(membership)
+            db.commit()
         return jsonify(success=True)
     finally:
         db.close()
