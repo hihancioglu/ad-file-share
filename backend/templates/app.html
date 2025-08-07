@@ -35,7 +35,18 @@
             <div class="me-3 position-relative" id="notif-container" style="cursor:pointer;">
                 <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
-                <div id="notif-list" class="list-group position-absolute d-none" style="top:2rem; right:0; z-index:1000; max-height:300px; overflow:auto;"></div>
+                <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:400px; width:500px; overflow:auto;">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Başlık</th>
+                                <th>Aksiyon</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
         </div>
@@ -304,18 +315,24 @@ document.getElementById('notif-container').addEventListener('click', async () =>
         await loadNotifications();
     }
     list.classList.toggle('d-none');
-    list.innerHTML = '';
+    const tbody = list.querySelector('tbody');
+    tbody.innerHTML = '';
     notifications.forEach(n => {
-        const item = document.createElement('div');
-        item.className = 'list-group-item d-flex justify-content-between align-items-center';
-        const span = document.createElement('span');
-        span.textContent = n.message;
-        item.appendChild(span);
+        const tr = document.createElement('tr');
+        const dateTd = document.createElement('td');
+        dateTd.textContent = n.created_at;
+        tr.appendChild(dateTd);
+        const msgTd = document.createElement('td');
+        msgTd.textContent = n.message;
+        tr.appendChild(msgTd);
+        const actionTd = document.createElement('td');
         if (n.team_id && !n.read) {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-sm btn-success';
-            btn.textContent = 'Kabul Et';
-            btn.addEventListener('click', async () => {
+            const accept = document.createElement('button');
+            accept.className = 'btn btn-sm btn-success me-1 d-flex align-items-center justify-content-center';
+            accept.style.width = '2rem';
+            accept.style.height = '2rem';
+            accept.innerHTML = '<i class="bi bi-check"></i>';
+            accept.addEventListener('click', async () => {
                 const fd = new FormData();
                 fd.append('username', username);
                 fd.append('team_id', n.team_id);
@@ -325,9 +342,24 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                 viewTeam(n.team_id);
                 loadNotifications();
             });
-            item.appendChild(btn);
+            const reject = document.createElement('button');
+            reject.className = 'btn btn-sm btn-danger d-flex align-items-center justify-content-center';
+            reject.style.width = '2rem';
+            reject.style.height = '2rem';
+            reject.innerHTML = '<i class="bi bi-x"></i>';
+            reject.addEventListener('click', async () => {
+                const fd = new FormData();
+                fd.append('username', username);
+                fd.append('team_id', n.team_id);
+                await fetch('/teams/reject', { method: 'POST', body: fd });
+                await markNotificationsRead([n.id]);
+                loadNotifications();
+            });
+            actionTd.appendChild(accept);
+            actionTd.appendChild(reject);
         }
-        list.appendChild(item);
+        tr.appendChild(actionTd);
+        tbody.appendChild(tr);
     });
     if (opening) {
         const unreadIds = notifications.filter(n => !n.read && !n.team_id).map(n => n.id);
