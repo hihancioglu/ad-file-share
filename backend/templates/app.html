@@ -465,6 +465,7 @@ function updateActionButtons() {
     shareBtn.disabled = disabled;
     addToTeamBtn.disabled = disabled;
     publicShareBtn.disabled = disabled || selected.size !== 1;
+    let label = 'Paylaş';
     publicShareBtn.classList.add('btn-outline-primary');
     publicShareBtn.classList.remove('btn-primary');
     if (selected.size === 1) {
@@ -473,8 +474,10 @@ function updateActionButtons() {
         if (file && file.link) {
             publicShareBtn.classList.add('btn-primary');
             publicShareBtn.classList.remove('btn-outline-primary');
+            label = 'Paylaşımı Durdur';
         }
     }
+    publicShareBtn.textContent = label;
 }
 
 async function loadFiles() {
