@@ -64,6 +64,8 @@ LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "")
 LDAP_SEARCH_FILTER = os.getenv(
     "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
 )
+# Only expose these OUs in the user selection tree
+ALLOWED_OUS = {"BAYLAN3", "BAYLAN4", "BAYLAN5"}
 
 GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
 GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID")
@@ -528,6 +530,7 @@ def users_tree():
         if not conn.bind():
             return jsonify(success=False, error="LDAP bağlantısı başarısız")
         tree = _build_ou_tree(conn, LDAP_BASE_DN)
+        tree = [node for node in tree if node["name"] in ALLOWED_OUS]
         return jsonify(tree=tree)
     except Exception as e:
         return jsonify(success=False, error=str(e))
