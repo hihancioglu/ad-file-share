@@ -53,7 +53,7 @@
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
         </div>
 
-        <section id="upload" class="mb-4" style="max-width: 50%;">
+        <section id="upload" class="mb-4 d-none" style="max-width: 50%;">
             <h2>Dosya Yükle</h2>
             <div id="drop-zone" class="mb-2 border border-primary rounded p-5 text-center w-100" style="cursor: pointer;">
                 Dosyaları buraya sürükleyin veya tıklayın
@@ -75,7 +75,7 @@
             <div id="upload-result" class="mt-2"></div>
         </section>
 
-        <section id="files">
+        <section id="files" class="d-none">
             <h2>Dosyalarım</h2>
             <div class="d-flex align-items-center mb-2">
                 <button id="delete-selected" class="btn btn-danger me-2" disabled>Sil</button>
@@ -152,7 +152,7 @@
             </table>
         </section>
 
-        <section id="teams" class="mt-4">
+        <section id="teams" class="mt-4 d-none">
             <h2>Ekipler</h2>
             <form id="team-form" class="mb-3">
                 <input type="text" id="team-name" class="form-control mb-2" placeholder="Ekip adı" required>
