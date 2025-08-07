@@ -205,6 +205,18 @@
   </div>
 </div>
 
+<div class="modal fade" id="previewModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Önizleme</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="preview-content"></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const username = localStorage.getItem('username');
@@ -464,25 +476,39 @@ async function loadPending() {
     json.shares.forEach(item => {
         const tr = document.createElement('tr');
         const fileTd = document.createElement('td');
-        fileTd.textContent = item.filename;
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = item.filename;
+        fileTd.appendChild(nameSpan);
+
         const ext = item.filename.split('.').pop().toLowerCase();
-        if (['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) {
-            const content = `<iframe src="/preview/${item.token}" style="width:400px;height:300px;"></iframe>`;
-            new bootstrap.Popover(fileTd, { trigger: 'hover', html: true, sanitize: false, placement: 'right', content });
-            fileTd.style.cursor = 'pointer';
-        } else if (['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'].includes(ext)) {
-            fileTd.style.cursor = 'pointer';
-            let pop = null;
-            fileTd.addEventListener('mouseenter', async () => {
-                if (!pop) {
+        const previewable = ['pdf'];
+        const archiveExts = ['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'];
+        if (previewable.includes(ext) || archiveExts.includes(ext)) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-outline-secondary ms-2';
+            btn.innerHTML = '<i class="bi bi-eye"></i>';
+            btn.addEventListener('click', async () => {
+                const modalContent = document.getElementById('preview-content');
+                modalContent.innerHTML = '';
+                if (archiveExts.includes(ext)) {
                     const res = await fetch(`/preview/${item.token}?list=1`);
                     const data = await res.json();
-                    const html = `<ul class="mb-0">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
-                    pop = new bootstrap.Popover(fileTd, { trigger: 'hover', html: true, sanitize: false, placement: 'right', content: html });
-                    pop.show();
+                    modalContent.innerHTML = `<ul class="mb-0">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
+                } else {
+                    modalContent.innerHTML = `<iframe src="/preview/${item.token}" style="width:100%;height:400px;"></iframe>`;
                 }
+                const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+                modal.show();
             });
+            fileTd.appendChild(btn);
         }
+
+        const dl = document.createElement('a');
+        dl.href = `/preview/${item.token}?download=1`;
+        dl.className = 'btn btn-sm btn-outline-primary ms-2';
+        dl.innerHTML = '<i class="bi bi-download"></i>';
+        fileTd.appendChild(dl);
+
         tr.appendChild(fileTd);
         const userTd = document.createElement('td');
         userTd.textContent = item.username;

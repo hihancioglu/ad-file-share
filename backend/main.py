@@ -788,6 +788,12 @@ def preview_file(token):
                 with zipfile.ZipFile(file_path) as zf:
                     return jsonify(files=zf.namelist())
             return jsonify(files=[])
+        if request.args.get("download") == "1":
+            return send_file(
+                file_path,
+                as_attachment=True,
+                download_name=link.filename,
+            )
         mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
         return send_file(file_path, mimetype=mime)
     finally:
