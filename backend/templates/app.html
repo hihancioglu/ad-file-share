@@ -35,9 +35,9 @@
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
         </div>
 
-        <section id="upload" class="mb-4">
+        <section id="upload" class="mb-4" style="max-width: 50%;">
             <h2>Dosya Yükle</h2>
-            <div id="drop-zone" class="mb-2 border border-primary rounded p-5 text-center" style="cursor: pointer;">
+            <div id="drop-zone" class="mb-2 border border-primary rounded p-5 text-center w-100" style="cursor: pointer;">
                 Dosyaları buraya sürükleyin veya tıklayın
                 <input type="file" id="file-input" name="files" multiple hidden>
             </div>
@@ -927,6 +927,9 @@ async function scanFile(file) {
     fd.append('file', file);
     const res = await fetch('/scan', { method: 'POST', body: fd });
     const json = await res.json();
+    if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Tarama başarısız');
+    }
     return json.clean;
 }
 
