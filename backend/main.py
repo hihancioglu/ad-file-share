@@ -1,6 +1,8 @@
 import os
 import secrets
 from datetime import datetime, timedelta
+import mimetypes
+import zipfile
 
 import msal
 import requests
@@ -766,6 +768,28 @@ def pending_shares():
                     }
                 )
         return jsonify(shares=shares)
+    finally:
+        db.close()
+
+
+@app.route("/preview/<token>", methods=["GET"])
+def preview_file(token):
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+        if not link:
+            return "", 404
+        auth_resp = require_manager_auth(link)
+        if auth_resp:
+            return auth_resp
+        file_path = os.path.join(DATA_DIR, link.username, link.filename)
+        if request.args.get("list") == "1":
+            if zipfile.is_zipfile(file_path):
+                with zipfile.ZipFile(file_path) as zf:
+                    return jsonify(files=zf.namelist())
+            return jsonify(files=[])
+        mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        return send_file(file_path, mimetype=mime)
     finally:
         db.close()
 
