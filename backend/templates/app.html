@@ -37,10 +37,20 @@
 
         <section id="upload" class="mb-4">
             <h2>Dosya Yükle</h2>
-            <input type="date" id="file-expiry" class="form-control mb-2" required>
-            <div id="drop-zone" class="mb-3 border border-primary rounded p-5 text-center" style="cursor: pointer;">
+            <div id="drop-zone" class="mb-2 border border-primary rounded p-5 text-center" style="cursor: pointer;">
                 Dosyaları buraya sürükleyin veya tıklayın
                 <input type="file" id="file-input" name="files" multiple hidden>
+            </div>
+            <ul id="file-list" class="list-group mb-2"></ul>
+            <div class="d-flex mb-2">
+                <select id="file-expiry" class="form-select me-2">
+                    <option value="1">1 gün</option>
+                    <option value="7">7 gün</option>
+                    <option value="30" selected>30 gün</option>
+                    <option value="60">60 gün</option>
+                    <option value="0">Süresiz</option>
+                </select>
+                <button id="upload-btn" class="btn btn-primary">Yükle</button>
             </div>
             <div id="upload-result" class="mt-2"></div>
         </section>
@@ -232,10 +242,6 @@ const sections = {
     'team-details': document.getElementById('team-details')
 };
 
-const expiryInput = document.getElementById('file-expiry');
-const defaultDate = new Date();
-defaultDate.setDate(defaultDate.getDate() + 30);
-expiryInput.value = defaultDate.toISOString().split('T')[0];
 
 function showSection(id) {
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
@@ -864,20 +870,39 @@ dropZone.addEventListener('dragleave', () => {
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('bg-light');
-    handleFiles(e.dataTransfer.files);
+    addFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+fileInput.addEventListener('change', () => addFiles(fileInput.files));
+document.getElementById('upload-btn').addEventListener('click', handleUpload);
 
-async function handleFiles(files) {
+const fileList = document.getElementById('file-list');
+let pendingFiles = [];
+
+function addFiles(files) {
+    for (const file of files) {
+        pendingFiles.push(file);
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = file.name;
+        fileList.appendChild(li);
+    }
+}
+
+async function handleUpload() {
     const result = document.getElementById('upload-result');
     result.innerHTML = '';
-    const expiry = document.getElementById('file-expiry').value;
-    if (!expiry) {
-        result.innerHTML = '<div class="alert alert-danger">Geçerlilik tarihi gerekli</div>';
+    const days = document.getElementById('file-expiry').value;
+    const expiry = days === '0' ? '' : (() => {
+        const d = new Date();
+        d.setDate(d.getDate() + parseInt(days));
+        return d.toISOString().split('T')[0];
+    })();
+    if (pendingFiles.length === 0) {
+        result.innerHTML = '<div class="alert alert-danger">Dosya gerekli</div>';
         return;
     }
     const uploaded = [];
-    for (const file of files) {
+    for (const file of pendingFiles) {
         try {
             const savedName = await uploadFile(file, expiry);
             uploaded.push(savedName);
@@ -889,6 +914,8 @@ async function handleFiles(files) {
     result.innerHTML += '<div class="alert alert-success">Dosyalar yüklendi</div>';
     showShareOptions(uploaded, result, expiry);
     loadFiles();
+    pendingFiles = [];
+    fileList.innerHTML = '';
 }
 
 function showShareOptions(filenames, container, expiry) {
@@ -967,9 +994,12 @@ async function uploadFile(file, expiry) {
         if (json.filenames && json.filenames.length > 0) {
             finalName = json.filenames[0];
         }
-        bar.style.width = ((i + 1) / totalChunks * 100) + '%';
+        const percent = Math.round((i + 1) / totalChunks * 100);
+        bar.style.width = percent + '%';
+        bar.textContent = percent + '%';
     }
     bar.classList.add('bg-success');
+    bar.textContent = '100%';
     return finalName;
 }
 
@@ -983,6 +1013,7 @@ function createProgressBar(filename) {
     const bar = document.createElement('div');
     bar.className = 'progress-bar';
     bar.style.width = '0%';
+    bar.textContent = '0%';
     progress.appendChild(bar);
     container.appendChild(label);
     container.appendChild(progress);
