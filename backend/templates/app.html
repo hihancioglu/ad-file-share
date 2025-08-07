@@ -303,11 +303,11 @@ async function loadNotifications() {
     }
 }
 
-async function markNotificationsRead(ids) {
+async function deleteNotifications(ids) {
     const fd = new FormData();
     fd.append('username', username);
     ids.forEach(id => fd.append('ids[]', id));
-    await fetch('/notifications/read', { method: 'POST', body: fd });
+    await fetch('/notifications/delete', { method: 'POST', body: fd });
 }
 
 document.getElementById('notif-list').addEventListener('click', e => e.stopPropagation());
@@ -317,7 +317,7 @@ document.getElementById('notif-clear').addEventListener('click', async (e) => {
     fd.append('username', username);
     await fetch('/notifications/clear', { method: 'POST', body: fd });
     notifications = [];
-    document.querySelector('#notif-list tbody').innerHTML = '';
+    document.querySelector('#notif-list tbody').innerHTML = '<tr><td colspan="3" class="text-center">Yeni bildirim yok</td></tr>';
     const countElem = document.getElementById('notif-count');
     const bell = document.getElementById('notif-bell');
     countElem.classList.add('d-none');
@@ -358,7 +358,17 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                 fd.append('username', username);
                 fd.append('team_id', n.team_id);
                 await fetch('/teams/accept', { method: 'POST', body: fd });
-                await markNotificationsRead([n.id]);
+                await deleteNotifications([n.id]);
+                tr.remove();
+                if (tbody.children.length === 0) {
+                    const emptyRow = document.createElement('tr');
+                    const emptyTd = document.createElement('td');
+                    emptyTd.colSpan = 3;
+                    emptyTd.className = 'text-center';
+                    emptyTd.textContent = 'Yeni bildirim yok';
+                    emptyRow.appendChild(emptyTd);
+                    tbody.appendChild(emptyRow);
+                }
                 loadTeams();
                 viewTeam(n.team_id);
                 loadNotifications();
@@ -373,7 +383,17 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                 fd.append('username', username);
                 fd.append('team_id', n.team_id);
                 await fetch('/teams/reject', { method: 'POST', body: fd });
-                await markNotificationsRead([n.id]);
+                await deleteNotifications([n.id]);
+                tr.remove();
+                if (tbody.children.length === 0) {
+                    const emptyRow = document.createElement('tr');
+                    const emptyTd = document.createElement('td');
+                    emptyTd.colSpan = 3;
+                    emptyTd.className = 'text-center';
+                    emptyTd.textContent = 'Yeni bildirim yok';
+                    emptyRow.appendChild(emptyTd);
+                    tbody.appendChild(emptyRow);
+                }
                 loadNotifications();
             });
             actionTd.appendChild(accept);
@@ -382,10 +402,19 @@ document.getElementById('notif-container').addEventListener('click', async () =>
         tr.appendChild(actionTd);
         tbody.appendChild(tr);
     });
+    if (notifications.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 3;
+        td.className = 'text-center';
+        td.textContent = 'Yeni bildirim yok';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
     if (opening) {
         const unreadIds = notifications.filter(n => !n.read && !n.team_id).map(n => n.id);
         if (unreadIds.length > 0) {
-            await markNotificationsRead(unreadIds);
+            await deleteNotifications(unreadIds);
             await loadNotifications();
         }
     }

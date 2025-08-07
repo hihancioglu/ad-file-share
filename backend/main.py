@@ -1379,6 +1379,22 @@ def read_notifications():
         db.close()
 
 
+@app.route("/notifications/delete", methods=["POST"])
+def delete_notifications():
+    username = request.form.get("username")
+    ids = request.form.getlist("ids[]") or request.form.getlist("ids")
+    db = SessionLocal()
+    try:
+        if ids:
+            db.query(Notification).filter(
+                Notification.username == username, Notification.id.in_(ids)
+            ).delete(synchronize_session=False)
+            db.commit()
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
 
