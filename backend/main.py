@@ -1083,6 +1083,7 @@ def delete_team():
             return jsonify(success=False, error="Yetkiniz yok")
         db.query(TeamMember).filter_by(team_id=team_id).delete()
         db.query(TeamFile).filter_by(team_id=team_id).delete()
+        db.query(Notification).filter_by(team_id=team_id).delete()
         db.delete(team)
         db.commit()
         return jsonify(success=True)
