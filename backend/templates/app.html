@@ -229,10 +229,15 @@ document.getElementById('username-display').textContent = displayName;
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.removeItem('username');
     localStorage.removeItem('name');
+    localStorage.removeItem('selectedFiles');
     window.location.href = '/login';
 });
 
-const selected = new Set();
+const STORAGE_KEY = 'selectedFiles';
+const selected = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+function updateSelectedStorage() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(selected)));
+}
 const deleteBtn = document.getElementById('delete-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
@@ -313,8 +318,11 @@ async function loadFiles() {
     currentFiles = json.files;
     const tbody = document.querySelector('#file-table tbody');
     tbody.innerHTML = '';
-    selected.clear();
-    updateActionButtons();
+    selected.forEach(value => {
+        if (!json.files.some(f => f.title === value)) {
+            selected.delete(value);
+        }
+    });
     json.files.forEach(file => {
         const tr = document.createElement('tr');
 
@@ -322,12 +330,14 @@ async function loadFiles() {
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = file.title;
+        cb.checked = selected.has(file.title);
         cb.addEventListener('change', () => {
             if (cb.checked) {
                 selected.add(cb.value);
             } else {
                 selected.delete(cb.value);
             }
+            updateSelectedStorage();
             updateActionButtons();
         });
         cbTd.appendChild(cb);
@@ -401,6 +411,9 @@ async function loadFiles() {
 
         tbody.appendChild(tr);
     });
+
+    updateSelectedStorage();
+    updateActionButtons();
 
     if (json.files.some(f => f.link && !f.approved)) {
         setTimeout(loadFiles, 5000);
