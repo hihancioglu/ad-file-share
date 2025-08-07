@@ -35,7 +35,7 @@
             <div class="me-3 position-relative" id="notif-container" style="cursor:pointer;">
                 <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
-                <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:400px; width:500px; overflow:auto;">
+                <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:600px; width:600px; overflow:auto;">
                     <table class="table table-sm mb-0">
                         <thead>
                             <tr>
@@ -233,6 +233,8 @@
   </div>
 </div>
 
+<div id="notif-overlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="backdrop-filter: blur(5px); background: rgba(0, 0, 0, 0.2); z-index:900;"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const username = localStorage.getItem('username');
@@ -310,9 +312,13 @@ async function markNotificationsRead(ids) {
 document.getElementById('notif-list').addEventListener('click', e => e.stopPropagation());
 document.getElementById('notif-container').addEventListener('click', async () => {
     const list = document.getElementById('notif-list');
+    const overlay = document.getElementById('notif-overlay');
     const opening = list.classList.contains('d-none');
     if (opening) {
         await loadNotifications();
+        overlay.classList.remove('d-none');
+    } else {
+        overlay.classList.add('d-none');
     }
     list.classList.toggle('d-none');
     const tbody = list.querySelector('tbody');
@@ -391,6 +397,12 @@ function showSection(id) {
 }
 
 document.addEventListener('click', (e) => {
+    const list = document.getElementById('notif-list');
+    const overlay = document.getElementById('notif-overlay');
+    if (!list.classList.contains('d-none') && !e.target.closest('#notif-container')) {
+        list.classList.add('d-none');
+        overlay.classList.add('d-none');
+    }
     if (e.target.matches('#sidebar .nav-link')) {
         e.preventDefault();
         const teamId = e.target.dataset.teamId;
