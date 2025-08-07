@@ -550,13 +550,25 @@ def scan_file():
         return jsonify(success=False, error="Missing API key"), 500
     headers = {"x-apikey": api_key}
     files = {"file": (file.filename, content)}
-    res = requests.post("https://www.virustotal.com/api/v3/files", headers=headers, files=files)
+    try:
+        res = requests.post(
+            "https://www.virustotal.com/api/v3/files", headers=headers, files=files
+        )
+    except requests.RequestException:
+        return jsonify(success=False, error="scan failed"), 200
     if res.status_code != 200:
-        return jsonify(success=False, error="scan failed"), 500
-    analysis_id = res.json().get("data", {}).get("id")
+        return jsonify(success=False, error="scan failed"), 200
+    data = res.json()
+    analysis_id = data.get("data", {}).get("id")
+    if not analysis_id:
+        return jsonify(success=False, error="scan failed"), 200
     analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
     for _ in range(15):
-        r = requests.get(analysis_url, headers=headers)
+        try:
+            r = requests.get(analysis_url, headers=headers)
+        except requests.RequestException:
+            time.sleep(2)
+            continue
         if r.status_code != 200:
             time.sleep(2)
             continue
@@ -568,7 +580,7 @@ def scan_file():
         stats = data["data"]["attributes"]["stats"]
         clean = stats.get("malicious", 0) == 0 and stats.get("suspicious", 0) == 0
         return jsonify(success=True, clean=clean)
-    return jsonify(success=False, error="analysis timeout"), 500
+    return jsonify(success=False, error="analysis timeout"), 200
 
 
 @app.route("/upload", methods=["POST"])
