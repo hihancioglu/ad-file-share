@@ -1,8 +1,5 @@
 import os
 import secrets
-import time
-import subprocess
-import tempfile
 from datetime import datetime, timedelta
 
 import msal
@@ -537,43 +534,6 @@ def users_tree():
             conn.unbind()
         except Exception:
             pass
-
-
-@app.route("/scan", methods=["POST"])
-def scan_file():
-    file = request.files.get("file")
-    if not file:
-        return jsonify(success=False, error="No file"), 400
-    content = file.read()
-    if len(content) > 50 * 1024 * 1024:
-        return jsonify(success=True, clean=True)
-
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        result = subprocess.run(
-            ["clamscan", "--no-summary", tmp_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        # clamscan not available; skip scanning
-        return jsonify(success=True, clean=True), 200
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
-    if result.returncode == 0:
-        return jsonify(success=True, clean=True)
-    if result.returncode == 1:
-        return jsonify(success=True, clean=False)
-    return jsonify(success=False, error="scan failed"), 200
-
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
