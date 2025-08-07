@@ -35,9 +35,9 @@
             <div class="me-3 position-relative" id="notif-container" style="cursor:pointer;">
                 <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
+                <div id="notif-list" class="list-group position-absolute d-none" style="top:2rem; right:0; z-index:1000; max-height:300px; overflow:auto;"></div>
             </div>
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
-            <div id="notif-list" class="list-group position-absolute d-none" style="top:3rem; right:0; z-index:1000; max-height:300px; overflow:auto;"></div>
         </div>
 
         <section id="upload" class="mb-4" style="max-width: 50%;">
@@ -296,8 +296,13 @@ async function markNotificationsRead(ids) {
     await fetch('/notifications/read', { method: 'POST', body: fd });
 }
 
+document.getElementById('notif-list').addEventListener('click', e => e.stopPropagation());
 document.getElementById('notif-container').addEventListener('click', async () => {
     const list = document.getElementById('notif-list');
+    const opening = list.classList.contains('d-none');
+    if (opening) {
+        await loadNotifications();
+    }
     list.classList.toggle('d-none');
     list.innerHTML = '';
     notifications.forEach(n => {
@@ -324,10 +329,12 @@ document.getElementById('notif-container').addEventListener('click', async () =>
         }
         list.appendChild(item);
     });
-    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
-    if (unreadIds.length > 0) {
-        await markNotificationsRead(unreadIds);
-        loadNotifications();
+    if (opening) {
+        const unreadIds = notifications.filter(n => !n.read && !n.team_id).map(n => n.id);
+        if (unreadIds.length > 0) {
+            await markNotificationsRead(unreadIds);
+            await loadNotifications();
+        }
     }
 });
 
