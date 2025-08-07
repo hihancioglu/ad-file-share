@@ -35,7 +35,7 @@
             <div class="me-3 position-relative" id="notif-container" style="cursor:pointer;">
                 <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
-                <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:600px; width:600px; overflow:auto;">
+                <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:600px; width:600px; overflow:auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                     <table class="table table-sm mb-0">
                         <thead>
                             <tr>
@@ -233,7 +233,7 @@
   </div>
 </div>
 
-<div id="notif-overlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="backdrop-filter: blur(5px); background: rgba(0, 0, 0, 0.2); z-index:900;"></div>
+<div id="notif-overlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="background: rgba(0, 0, 0, 0.2); z-index:900;"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -332,9 +332,10 @@ document.getElementById('notif-container').addEventListener('click', async () =>
         msgTd.textContent = n.message;
         tr.appendChild(msgTd);
         const actionTd = document.createElement('td');
+        actionTd.classList.add('text-nowrap');
         if (n.team_id && !n.read) {
             const accept = document.createElement('button');
-            accept.className = 'btn btn-sm btn-success me-1 d-flex align-items-center justify-content-center';
+            accept.className = 'btn btn-sm btn-success me-1 d-inline-flex align-items-center justify-content-center';
             accept.style.width = '2rem';
             accept.style.height = '2rem';
             accept.innerHTML = '<i class="bi bi-check"></i>';
@@ -349,7 +350,7 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                 loadNotifications();
             });
             const reject = document.createElement('button');
-            reject.className = 'btn btn-sm btn-danger d-flex align-items-center justify-content-center';
+            reject.className = 'btn btn-sm btn-danger d-inline-flex align-items-center justify-content-center';
             reject.style.width = '2rem';
             reject.style.height = '2rem';
             reject.innerHTML = '<i class="bi bi-x"></i>';
