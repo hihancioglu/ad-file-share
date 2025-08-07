@@ -77,18 +77,18 @@
 
         <section id="files">
             <h2>Dosyalarım</h2>
-            <div class="d-flex mb-2">
-                <input type="text" id="file-search" class="form-control me-2" placeholder="Ara...">
-                <select id="page-size" class="form-select" style="width:auto;">
+            <div class="d-flex align-items-center mb-2">
+                <input type="text" id="file-search" class="form-control me-2 flex-grow-1" placeholder="Ara...">
+                <select id="page-size" class="form-select me-2" style="width:auto;">
                     <option value="15" selected>15</option>
                     <option value="30">30</option>
                     <option value="100">100</option>
                 </select>
+                <button id="delete-selected" class="btn btn-danger me-2" disabled>Sil</button>
+                <button id="share-selected" class="btn btn-primary me-2" disabled>Kullanıcıya Gönder</button>
+                <button id="public-share" class="btn btn-outline-primary me-2" disabled>Paylaş</button>
+                <button id="add-to-team" class="btn btn-secondary" disabled>Gruba Ekle</button>
             </div>
-            <button id="delete-selected" class="btn btn-danger mb-2 me-2" disabled>Sil</button>
-            <button id="share-selected" class="btn btn-primary mb-2 me-2" disabled>Kullanıcıya Gönder</button>
-            <button id="public-share" class="btn btn-outline-primary mb-2 me-2" disabled>Paylaş</button>
-            <button id="add-to-team" class="btn btn-secondary mb-2" disabled>Gruba Ekle</button>
             <table id="file-table" class="table">
                 <thead>
                     <tr>
