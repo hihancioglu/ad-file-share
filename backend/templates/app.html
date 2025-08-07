@@ -36,7 +36,8 @@
                 <i id="notif-bell" class="bi bi-bell" style="font-size:1.5rem;"></i>
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
                 <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; right:0; z-index:1000; max-height:600px; width:600px; overflow:auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <table class="table table-sm mb-0">
+                    <i id="notif-clear" class="bi bi-x-circle-fill text-secondary position-absolute" style="top:4px; right:4px; cursor:pointer;"></i>
+                    <table class="table table-sm mb-0 mt-4">
                         <thead>
                             <tr>
                                 <th>Tarih</th>
@@ -310,6 +311,19 @@ async function markNotificationsRead(ids) {
 }
 
 document.getElementById('notif-list').addEventListener('click', e => e.stopPropagation());
+document.getElementById('notif-clear').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const fd = new FormData();
+    fd.append('username', username);
+    await fetch('/notifications/clear', { method: 'POST', body: fd });
+    notifications = [];
+    document.querySelector('#notif-list tbody').innerHTML = '';
+    const countElem = document.getElementById('notif-count');
+    const bell = document.getElementById('notif-bell');
+    countElem.classList.add('d-none');
+    bell.classList.add('bi-bell');
+    bell.classList.remove('bi-bell-fill');
+});
 document.getElementById('notif-container').addEventListener('click', async () => {
     const list = document.getElementById('notif-list');
     const overlay = document.getElementById('notif-overlay');

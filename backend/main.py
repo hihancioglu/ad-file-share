@@ -1288,6 +1288,12 @@ def accept_team():
             return jsonify(success=False, error="Ekip bulunamadı")
         membership.accepted = True
         db.commit()
+        team = db.query(Team).filter_by(id=team_id).first()
+        if team:
+            create_notification(
+                team.creator,
+                f"{username} kullanıcısı {team.name} ekibine katılma davetini kabul etti.",
+            )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1304,9 +1310,27 @@ def reject_team():
             .filter_by(team_id=team_id, username=username)
             .first()
         )
+        team = db.query(Team).filter_by(id=team_id).first()
         if membership:
             db.delete(membership)
             db.commit()
+            if team:
+                create_notification(
+                    team.creator,
+                    f"{username} kullanıcısı {team.name} ekibine katılma davetini reddetti.",
+                )
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/notifications/clear", methods=["POST"])
+def clear_notifications():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        db.query(Notification).filter_by(username=username).delete()
+        db.commit()
         return jsonify(success=True)
     finally:
         db.close()
