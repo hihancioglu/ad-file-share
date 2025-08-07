@@ -20,9 +20,9 @@ should contain a `{query}` placeholder that will be replaced with the incoming
 search text. By default the application uses
 `(&(objectClass=user)(sAMAccountName=*{query}*))`.
 
-For optional VirusTotal scanning of uploaded files, provide `VT_API_KEY` in the
-environment. Files smaller than 50MB will be scanned before the upload button
-appears.
+For optional ClamAV scanning of uploaded files, ensure the `clamscan` command is
+available in the backend container. Files smaller than 50MB will be scanned
+before the upload button appears.
 
 For public shares requiring manager approval, the backend sends an e-mail to the
 user's manager through the Microsoft Graph API. Configure the following variables:
