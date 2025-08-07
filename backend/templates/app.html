@@ -49,6 +49,7 @@
                     </table>
                 </div>
             </div>
+            <button id="admin-btn" class="btn btn-outline-primary btn-sm me-2 d-none">Admin</button>
             <button id="logout-btn" class="btn btn-outline-secondary btn-sm">Çıkış</button>
         </div>
 
@@ -243,12 +244,26 @@ if (!username) {
     window.location.href = '/login';
 }
 
+const isAdmin = localStorage.getItem('admin') === '1';
+const adminBtn = document.getElementById('admin-btn');
+let adminMode = false;
+if (isAdmin) {
+    adminBtn.classList.remove('d-none');
+    adminBtn.addEventListener('click', () => {
+        adminMode = !adminMode;
+        adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
+        loadFiles();
+        loadTeams();
+    });
+}
+
 const displayName = localStorage.getItem('name') || username;
 document.getElementById('username-display').textContent = displayName;
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.removeItem('username');
     localStorage.removeItem('name');
     localStorage.removeItem('selectedFiles');
+    localStorage.removeItem('admin');
     window.location.href = '/login';
 });
 
@@ -483,38 +498,49 @@ function updateActionButtons() {
 async function loadFiles() {
     const formData = new FormData();
     formData.append('username', username);
+    if (adminMode) {
+        formData.append('admin', '1');
+    }
     const res = await fetch('/list', { method: 'POST', body: formData });
     const json = await res.json();
     currentFiles = json.files;
     const tbody = document.querySelector('#file-table tbody');
     tbody.innerHTML = '';
-    selected.forEach(value => {
-        if (!json.files.some(f => f.title === value)) {
-            selected.delete(value);
-        }
-    });
+    if (adminMode) {
+        selected.clear();
+        updateSelectedStorage();
+    } else {
+        selected.forEach(value => {
+            if (!json.files.some(f => f.title === value)) {
+                selected.delete(value);
+            }
+        });
+        updateSelectedStorage();
+    }
     json.files.forEach(file => {
         const tr = document.createElement('tr');
 
         const cbTd = document.createElement('td');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = file.title;
-        cb.checked = selected.has(file.title);
-        cb.addEventListener('change', () => {
-            if (cb.checked) {
-                selected.add(cb.value);
-            } else {
-                selected.delete(cb.value);
-            }
-            updateSelectedStorage();
-            updateActionButtons();
-        });
-        cbTd.appendChild(cb);
+        if (!adminMode) {
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = file.title;
+            cb.checked = selected.has(file.title);
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    selected.add(cb.value);
+                } else {
+                    selected.delete(cb.value);
+                }
+                updateSelectedStorage();
+                updateActionButtons();
+            });
+            cbTd.appendChild(cb);
+        }
         tr.appendChild(cbTd);
 
         const titleTd = document.createElement('td');
-        titleTd.textContent = file.title;
+        titleTd.textContent = adminMode ? `${file.username} - ${file.title}` : file.title;
         if (file.link) {
             const linkBtn = document.createElement('button');
             linkBtn.className = 'btn btn-sm btn-outline-primary ms-2';
@@ -582,7 +608,6 @@ async function loadFiles() {
         tbody.appendChild(tr);
     });
 
-    updateSelectedStorage();
     updateActionButtons();
 
     if (json.files.some(f => f.link && !f.approved)) {
@@ -916,6 +941,9 @@ async function viewTeam(teamId) {
 async function loadTeams() {
     const formData = new FormData();
     formData.append('username', username);
+    if (adminMode) {
+        formData.append('admin', '1');
+    }
     const res = await fetch('/teams/list', { method: 'POST', body: formData });
     const json = await res.json();
     const list = document.getElementById('team-list');
@@ -949,7 +977,7 @@ async function loadTeams() {
         li.appendChild(membersSpan);
 
         const btn = document.createElement('button');
-        const isCreator = team.creator === username;
+        const isCreator = adminMode || team.creator === username;
         btn.className = 'btn btn-sm ' + (isCreator ? 'btn-danger' : 'btn-outline-secondary');
         btn.textContent = isCreator ? 'Sil' : 'Ayrıl';
         btn.addEventListener('click', async (e) => {
