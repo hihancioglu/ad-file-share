@@ -421,6 +421,19 @@ def delete_share_link(username: str, filename: str):
         db.close()
 
 
+def delete_share_notification(username: str, filename: str):
+    mgr_user, _ = get_manager_info(username)
+    if not mgr_user:
+        return
+    db = SessionLocal()
+    try:
+        message = f"'{filename}' dosyası için onay bekleyen paylaşım"
+        db.query(Notification).filter_by(username=mgr_user, message=message).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
 def log_download(username: str, filename: str):
     db = SessionLocal()
     try:
@@ -793,6 +806,8 @@ def delete_file():
         db.commit()
     finally:
         db.close()
+    delete_share_link(username, filename)
+    delete_share_notification(username, filename)
     return jsonify(success=True)
 
 
@@ -823,6 +838,7 @@ def delete_share():
     username = request.form.get("username")
     filename = request.form.get("filename")
     delete_share_link(username, filename)
+    delete_share_notification(username, filename)
     return jsonify(success=True)
 
 
