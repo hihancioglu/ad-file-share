@@ -292,7 +292,12 @@ const publicShareBtn = document.getElementById('public-share');
 const searchInput = document.getElementById('file-search');
 const pageSizeSelect = document.getElementById('page-size');
 const pagination = document.getElementById('file-pagination');
-let currentPage = 1;
+const PAGE_KEY = 'filesCurrentPage';
+let currentPage = parseInt(localStorage.getItem(PAGE_KEY), 10) || 1;
+function setCurrentPage(page) {
+    currentPage = page;
+    localStorage.setItem(PAGE_KEY, page);
+}
 let currentSort = { field: null, dir: 1 };
 let teams = [];
 let currentTeamId = null;
@@ -315,12 +320,12 @@ const sections = {
 };
 
 searchInput.addEventListener('input', () => {
-    currentPage = 1;
+    setCurrentPage(1);
     renderFiles();
 });
 
 pageSizeSelect.addEventListener('change', () => {
-    currentPage = 1;
+    setCurrentPage(1);
     renderFiles();
 });
 
@@ -558,7 +563,7 @@ function renderPagination(totalPages) {
     prevLink.addEventListener('click', e => {
         e.preventDefault();
         if (currentPage > 1) {
-            currentPage--;
+            setCurrentPage(currentPage - 1);
             renderFiles();
         }
     });
@@ -574,7 +579,7 @@ function renderPagination(totalPages) {
         a.textContent = i;
         a.addEventListener('click', e => {
             e.preventDefault();
-            currentPage = i;
+            setCurrentPage(i);
             renderFiles();
         });
         li.appendChild(a);
@@ -590,7 +595,7 @@ function renderPagination(totalPages) {
     nextLink.addEventListener('click', e => {
         e.preventDefault();
         if (currentPage < totalPages) {
-            currentPage++;
+            setCurrentPage(currentPage + 1);
             renderFiles();
         }
     });
@@ -640,7 +645,7 @@ function renderFiles() {
     }
     const size = parseInt(pageSizeSelect.value);
     const totalPages = Math.max(1, Math.ceil(files.length / size));
-    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage > totalPages) setCurrentPage(totalPages);
     const start = (currentPage - 1) * size;
     const pageFiles = files.slice(start, start + size);
     const tbody = document.querySelector('#file-table tbody');
@@ -758,7 +763,6 @@ async function loadFiles() {
         });
         updateSelectedStorage();
     }
-    currentPage = 1;
     renderFiles();
     if (json.files.some(f => f.link && !f.approved)) {
         setTimeout(loadFiles, 5000);
