@@ -265,6 +265,7 @@ if (isAdmin) {
         adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
         loadFiles();
         loadTeams();
+        loadPending();
     });
 }
 
@@ -831,6 +832,9 @@ async function loadOutgoing() {
 async function loadPending() {
     const fd = new FormData();
     fd.append('username', username);
+    if (adminMode) {
+        fd.append('admin', '1');
+    }
     const res = await fetch('/share/pending', { method: 'POST', body: fd });
     const json = await res.json();
     const tbody = document.querySelector('#pending-table tbody');

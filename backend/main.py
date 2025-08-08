@@ -317,12 +317,12 @@ def authenticate_user(username: str, password: str) -> bool:
 
 
 def require_manager_auth(link):
-    """Ensure the requester is the manager of the link's owner."""
+    """Ensure the requester is the manager of the link's owner or an admin."""
     user = session.get("username")
     if not user:
         return redirect(f"/login?next={request.path}")
     manager_user, _ = get_manager_info(link.username)
-    if user != manager_user:
+    if user != manager_user and not is_admin(user):
         return render_template("message.html", message="Yetkisiz"), 403
     return None
 
@@ -872,14 +872,14 @@ def reject_share(token):
 
 @app.route("/share/pending", methods=["POST"])
 def pending_shares():
-    manager = request.form.get("username")
+    user = request.form.get("username")
+    admin_mode = request.form.get("admin") and is_admin(user)
     db = SessionLocal()
     try:
         links = db.query(ShareLink).filter_by(approved=False, rejected=False).all()
         shares = []
         for link in links:
-            mgr_user, _ = get_manager_info(link.username)
-            if mgr_user == manager:
+            if admin_mode:
                 shares.append(
                     {
                         "token": link.token,
@@ -888,6 +888,17 @@ def pending_shares():
                         "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
                     }
                 )
+            else:
+                mgr_user, _ = get_manager_info(link.username)
+                if mgr_user == user:
+                    shares.append(
+                        {
+                            "token": link.token,
+                            "username": link.username,
+                            "filename": link.filename,
+                            "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
+                        }
+                    )
         return jsonify(shares=shares)
     finally:
         db.close()
