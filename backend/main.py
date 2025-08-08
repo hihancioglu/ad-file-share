@@ -705,6 +705,7 @@ def list_files():
                     "rejected": rejected,
                 }
             )
+        files.sort(key=lambda f: f["added"], reverse=True)
         return jsonify(files=files)
 
     db = SessionLocal()
@@ -761,6 +762,7 @@ def list_files():
                     "rejected": rejected,
                 }
             )
+    files.sort(key=lambda f: f["added"], reverse=True)
     return jsonify(files=files)
 
 
