@@ -299,6 +299,15 @@ function setCurrentPage(page) {
     currentPage = page;
     localStorage.setItem(PAGE_KEY, page);
 }
+const SECTION_KEY = 'currentSection';
+window.addEventListener('beforeunload', () => {
+    updateSelectedStorage();
+    localStorage.setItem(PAGE_KEY, currentPage);
+    const hash = window.location.hash ? window.location.hash.substring(1) : '';
+    if (hash) {
+        localStorage.setItem(SECTION_KEY, hash);
+    }
+});
 let currentSort = { field: null, dir: 1 };
 let teams = [];
 let currentTeamId = null;
@@ -493,6 +502,7 @@ function showSection(id) {
         section.classList.remove('d-none');
         if (id !== 'team-details') {
             window.location.hash = id;
+            localStorage.setItem(SECTION_KEY, id);
         }
         if (id === 'files') {
             loadFiles();
@@ -1176,7 +1186,7 @@ document.getElementById('team-form').addEventListener('submit', async (e) => {
 
 loadTeams();
 loadPending();
-const initialHash = window.location.hash ? window.location.hash.substring(1) : '';
+const initialHash = window.location.hash ? window.location.hash.substring(1) : (localStorage.getItem(SECTION_KEY) || '');
 if (initialHash.startsWith('team-')) {
     const teamId = initialHash.substring(5);
     viewTeam(teamId);
