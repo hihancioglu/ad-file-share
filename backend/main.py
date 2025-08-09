@@ -32,6 +32,7 @@ from models import (
     UserShare,
     UserFile,
 )
+from sqlalchemy import func
 
 load_dotenv()
 add_missing_columns()
@@ -683,6 +684,13 @@ def list_files():
                 .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
                 .all()
             }
+            counts = {
+                fn: cnt
+                for fn, cnt in db.query(DownloadLog.filename, func.count())
+                .filter_by(username=username)
+                .group_by(DownloadLog.filename)
+                .all()
+            }
         finally:
             db.close()
 
@@ -712,6 +720,7 @@ def list_files():
                     "link": f"/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
+                    "download_count": counts.get(filename, 0),
                 }
             )
         files.sort(key=lambda f: f["added"], reverse=True)
@@ -734,6 +743,16 @@ def list_files():
             for l in db.query(ShareLink)
             .filter(ShareLink.rejected == False)
             .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
+            .all()
+        }
+        counts = {
+            (dl.username, dl.filename): cnt
+            for dl.username, dl.filename, cnt in db.query(
+                DownloadLog.username,
+                DownloadLog.filename,
+                func.count(),
+            )
+            .group_by(DownloadLog.username, DownloadLog.filename)
             .all()
         }
     finally:
@@ -770,6 +789,7 @@ def list_files():
                     "link": f"/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
+                    "download_count": counts.get((user, filename), 0),
                 }
             )
     files.sort(key=lambda f: f["added"], reverse=True)
@@ -787,6 +807,33 @@ def download_file():
         return jsonify(success=False, error="Dosya bulunamadı")
     log_download(username, filename, session.get("username"))
     return send_file(file_path, as_attachment=True, download_name=filename)
+
+
+@app.route("/download/logs", methods=["POST"])
+def download_logs():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    db = SessionLocal()
+    try:
+        logs = (
+            db.query(DownloadLog)
+            .filter_by(username=username, filename=filename)
+            .order_by(DownloadLog.timestamp.desc())
+            .all()
+        )
+        data = []
+        for log in logs:
+            ts = log.timestamp + timedelta(hours=3)
+            data.append(
+                {
+                    "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                    "ip_address": log.ip_address,
+                    "country": log.country,
+                }
+            )
+        return jsonify(logs=data)
+    finally:
+        db.close()
 
 
 @app.route("/delete", methods=["POST"])
