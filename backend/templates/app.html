@@ -755,6 +755,11 @@ function renderFiles() {
 }
 
 async function loadFiles() {
+    // Restore persisted selections so auto-refresh preserves checkbox state
+    if (!adminMode) {
+        selected.clear();
+        JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').forEach(v => selected.add(v));
+    }
     const formData = new FormData();
     formData.append('username', username);
     if (adminMode) {
@@ -767,11 +772,12 @@ async function loadFiles() {
         selected.clear();
         updateSelectedStorage();
     } else {
-        selected.forEach(value => {
-            if (!json.files.some(f => f.title === value)) {
+        const existing = new Set(json.files.map(f => f.title));
+        for (const value of Array.from(selected)) {
+            if (!existing.has(value)) {
                 selected.delete(value);
             }
-        });
+        }
         updateSelectedStorage();
     }
     renderFiles();
