@@ -393,6 +393,30 @@ def set_file_expiry(username: str, filename: str, expires_dt):
         db.close()
 
 
+def cleanup_expired_files():
+    now = datetime.utcnow()
+    db = SessionLocal()
+    try:
+        expired = (
+            db.query(UserFile)
+            .filter(UserFile.expires_at != None)
+            .filter(UserFile.expires_at < now)
+            .all()
+        )
+        for meta in expired:
+            user_dir = os.path.join(DATA_DIR, meta.username)
+            file_path = os.path.join(user_dir, meta.filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            db.query(ShareLink).filter_by(
+                username=meta.username, filename=meta.filename
+            ).delete()
+            db.delete(meta)
+        db.commit()
+    finally:
+        db.close()
+
+
 @app.route("/", methods=["GET"])
 def read_app():
     return render_template("app.html")
@@ -538,7 +562,7 @@ def upload_file():
 
     Legacy single-request uploads are still supported for small files.
     """
-
+    cleanup_expired_files()
     username = request.form.get("username")
     expires_at = request.form.get("expires_at")
     expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
@@ -598,6 +622,7 @@ def upload_file():
 
 @app.route("/list", methods=["POST"])
 def list_files():
+    cleanup_expired_files()
     username = request.form.get("username")
     admin_mode = request.form.get("admin") and is_admin(username)
     if not admin_mode:
@@ -720,6 +745,7 @@ def list_files():
 
 @app.route("/download", methods=["POST"])
 def download_file():
+    cleanup_expired_files()
     username = request.form.get("username")
     filename = request.form.get("filename")
     user_dir = os.path.join(DATA_DIR, username)
@@ -755,8 +781,13 @@ def delete_file():
 
 @app.route("/share", methods=["POST"])
 def share_file():
+    cleanup_expired_files()
     username = request.form.get("username")
     filename = request.form.get("filename")
+    user_dir = os.path.join(DATA_DIR, username)
+    file_path = os.path.join(user_dir, filename)
+    if not os.path.exists(file_path):
+        return jsonify(success=False, error="Dosya bulunamadı")
     days = request.form.get("days")
     token = find_share_token(username, filename)
     if token is None:
@@ -764,6 +795,19 @@ def share_file():
         expires_at = None
         if days and int(days) > 0:
             expires_at = datetime.utcnow() + timedelta(days=int(days))
+        db = SessionLocal()
+        try:
+            meta = (
+                db.query(UserFile)
+                .filter_by(username=username, filename=filename)
+                .first()
+            )
+            file_exp = meta.expires_at if meta else None
+        finally:
+            db.close()
+        if file_exp:
+            if not expires_at or expires_at > file_exp:
+                expires_at = file_exp
         auto_approve = is_department_manager(username)
         create_share_link(
             token, username, filename, expires_at, approved=auto_approve
@@ -912,13 +956,27 @@ def preview_file(token):
 
 @app.route("/share/user", methods=["POST"])
 def share_with_user():
+    cleanup_expired_files()
     sender = request.form.get("username")
     recipient = request.form.get("recipient")
     filename = request.form.get("filename")
     expires_at = request.form.get("expires_at")
     expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
+    user_dir = os.path.join(DATA_DIR, sender)
+    file_path = os.path.join(user_dir, filename)
+    if not os.path.exists(file_path):
+        return jsonify(success=False, error="Dosya bulunamadı")
     db = SessionLocal()
     try:
+        meta = (
+            db.query(UserFile)
+            .filter_by(username=sender, filename=filename)
+            .first()
+        )
+        file_exp = meta.expires_at if meta else None
+        if file_exp:
+            if not expires_dt or expires_dt > file_exp:
+                expires_dt = file_exp
         db.add(
             UserShare(
                 sender=sender,
@@ -1051,6 +1109,7 @@ def delete_outgoing():
 
 @app.route("/public/<token>", methods=["GET"])
 def public_page(token):
+    cleanup_expired_files()
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
@@ -1086,6 +1145,7 @@ def public_page(token):
 
 @app.route("/public/<token>/download", methods=["GET"])
 def public_download_file(token):
+    cleanup_expired_files()
     db = SessionLocal()
     try:
         link = db.query(ShareLink).filter_by(token=token).first()
@@ -1304,6 +1364,7 @@ def list_teams():
 
 @app.route("/teams/add_files", methods=["POST"])
 def add_files_to_team():
+    cleanup_expired_files()
     username = request.form.get("username")
     team_id = request.form.get("team_id")
     filenames = request.form.getlist("filenames")
@@ -1321,12 +1382,25 @@ def add_files_to_team():
         team = db.query(Team).filter_by(id=team_id).first()
         members = db.query(TeamMember).filter_by(team_id=team_id, accepted=True).all()
         for fname in filenames:
+            file_path = os.path.join(DATA_DIR, username, fname)
+            if not os.path.exists(file_path):
+                continue
+            meta = (
+                db.query(UserFile)
+                .filter_by(username=username, filename=fname)
+                .first()
+            )
+            file_exp = meta.expires_at if meta else None
+            share_exp = expires_dt
+            if file_exp:
+                if not share_exp or share_exp > file_exp:
+                    share_exp = file_exp
             db.add(
                 TeamFile(
                     team_id=team_id,
                     username=username,
                     filename=fname,
-                    expires_at=expires_dt,
+                    expires_at=share_exp,
                 )
             )
         db.commit()
