@@ -57,6 +57,17 @@ def get_unique_filename(directory: str, filename: str) -> str:
 # Track in-progress uploads to handle name collisions for chunked uploads
 current_uploads = {}
 
+
+def format_file_size(num_bytes: int) -> str:
+    size = float(num_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1000 or unit == "TB":
+            if unit == "B":
+                return f"{int(size)} B"
+            return f"{size:.1f} {unit}"
+        size /= 1000
+
+
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 LDAP_USER = os.getenv("LDAP_USER")
@@ -1131,14 +1142,14 @@ def public_page(token):
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
-    size_kb = round(os.path.getsize(file_path) / 1024, 2)
+    size = format_file_size(os.path.getsize(file_path))
     uploader = get_full_name(username)
     return render_template(
         "public.html",
         token=token,
         filename=filename,
         uploader=uploader,
-        size_kb=size_kb,
+        size=size,
         expires_at=link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
     )
 
