@@ -25,7 +25,7 @@
     {% else %}
         <h2>{{ filename }}</h2>
         <p>Paylaşan: {{ uploader }}</p>
-        <p>Boyut: {{ size_kb }} KB</p>
+        <p>Boyut: {{ size }}</p>
         <p>Geçerlilik: {{ expires_at }}</p>
         <a class="btn btn-primary" href="{{ url_for('public_download_file', token=token) }}">Download</a>
     {% endif %}
