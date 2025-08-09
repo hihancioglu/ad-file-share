@@ -372,10 +372,32 @@ def delete_share_notification(username: str, filename: str):
         db.close()
 
 
+def get_country_from_ip(ip_address: str) -> str:
+    try:
+        resp = requests.get(
+            f"https://ipapi.co/{ip_address}/json/", timeout=5
+        )
+        if resp.ok:
+            data = resp.json()
+            return data.get("country_name", "")
+    except Exception:
+        pass
+    return ""
+
+
 def log_download(username: str, filename: str, downloader: str | None = None):
+    ip_addr = request.headers.get("X-Forwarded-For", request.remote_addr)
+    country = get_country_from_ip(ip_addr) if ip_addr else ""
     db = SessionLocal()
     try:
-        db.add(DownloadLog(username=username, filename=filename))
+        db.add(
+            DownloadLog(
+                username=username,
+                filename=filename,
+                ip_address=ip_addr,
+                country=country,
+            )
+        )
         db.commit()
     finally:
         db.close()
@@ -1191,15 +1213,24 @@ def stats():
     try:
         logs = db.query(DownloadLog).filter_by(username=username).all()
         logs_data = [
-            {"filename": l.filename, "timestamp": l.timestamp.isoformat()}
+            {
+                "filename": l.filename,
+                "timestamp": l.timestamp.isoformat(),
+                "ip_address": l.ip_address,
+                "country": l.country,
+            }
             for l in logs
         ]
+        counts = {}
+        for l in logs:
+            counts[l.filename] = counts.get(l.filename, 0) + 1
     finally:
         db.close()
     return jsonify(
         file_count=file_count,
         download_count=len(logs_data),
         download_logs=logs_data,
+        download_counts=counts,
     )
 
 

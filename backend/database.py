@@ -51,3 +51,15 @@ def add_missing_columns():
                     "ALTER TABLE team_members ADD COLUMN accepted BOOLEAN DEFAULT FALSE"
                 )
             )
+
+    download_cols = [col["name"] for col in inspector.get_columns("download_logs")]
+    if "ip_address" not in download_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE download_logs ADD COLUMN ip_address VARCHAR")
+            )
+    if "country" not in download_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE download_logs ADD COLUMN country VARCHAR")
+            )
