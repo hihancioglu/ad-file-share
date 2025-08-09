@@ -33,6 +33,13 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const _fetch = window.fetch.bind(window);
+window.fetch = (url, options = {}) => {
+    if (!options.credentials) {
+        options.credentials = 'include';
+    }
+    return _fetch(url, options);
+};
 const params = new URLSearchParams(window.location.search);
 const next = params.get('next');
 document.getElementById('login-form').addEventListener('submit', async (e) => {

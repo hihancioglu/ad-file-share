@@ -288,6 +288,14 @@ if (!username) {
     window.location.href = '/login';
 }
 
+const _fetch = window.fetch.bind(window);
+window.fetch = (url, options = {}) => {
+    if (!options.credentials) {
+        options.credentials = 'include';
+    }
+    return _fetch(url, options);
+};
+
 const isAdmin = localStorage.getItem('admin') === '1';
 const adminBtn = document.getElementById('admin-btn');
 const ADMIN_MODE_KEY = 'adminMode';

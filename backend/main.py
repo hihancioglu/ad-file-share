@@ -39,7 +39,7 @@ add_missing_columns()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
-CORS(app)
+CORS(app, supports_credentials=True)
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
