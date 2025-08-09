@@ -567,6 +567,10 @@ def upload_file():
         if chunk_index + 1 == total_chunks:
             current_uploads.pop(key, None)
             set_file_expiry(username, final_name, expires_dt)
+            log_activity(
+                username,
+                f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
+            )
             return jsonify(success=True, filenames=[final_name])
         return jsonify(success=True, chunk_index=chunk_index)
 
@@ -584,6 +588,10 @@ def upload_file():
             file.save(file_path)
             uploaded.append(final_name)
             set_file_expiry(username, final_name, expires_dt)
+            log_activity(
+                username,
+                f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
+            )
 
     return jsonify(success=True, filenames=uploaded)
 
@@ -737,6 +745,9 @@ def delete_file():
         db.close()
     delete_share_link(username, filename)
     delete_share_notification(username, filename)
+    log_activity(
+        username, f"{username} kullanıcısı '{filename}' dosyasını sildi"
+    )
     return jsonify(success=True)
 
 
@@ -754,6 +765,10 @@ def share_file():
         auto_approve = is_department_manager(username)
         create_share_link(
             token, username, filename, expires_at, approved=auto_approve
+        )
+        log_activity(
+            username,
+            f"{username} kullanıcısı '{filename}' dosyası için açık paylaşım oluşturdu",
         )
         if auto_approve:
             create_notification(
@@ -777,6 +792,10 @@ def delete_share():
     filename = request.form.get("filename")
     delete_share_link(username, filename)
     delete_share_notification(username, filename)
+    log_activity(
+        username,
+        f"{username} kullanıcısı '{filename}' dosyasının paylaşımını kaldırdı",
+    )
     return jsonify(success=True)
 
 
@@ -907,6 +926,10 @@ def share_with_user():
             )
         )
         db.commit()
+        log_activity(
+            [sender, recipient],
+            f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
+        )
         return jsonify(success=True)
     finally:
         db.close()
@@ -994,11 +1017,31 @@ def delete_outgoing():
             db.query(UserShare).filter_by(
                 sender=username, recipient=target, filename=filename
             ).delete()
+            db.commit()
+            log_activity(
+                [username, target],
+                f"{username} kullanıcısı {target} kullanıcısına paylaştığı '{filename}' dosyasını kaldırdı",
+            )
         elif target_type == "team":
+            team_id = int(target)
+            team = db.query(Team).filter_by(id=team_id).first()
+            members = (
+                db.query(TeamMember)
+                .filter_by(team_id=team_id, accepted=True)
+                .all()
+            )
             db.query(TeamFile).filter_by(
-                team_id=int(target), username=username, filename=filename
+                team_id=team_id, username=username, filename=filename
             ).delete()
-        db.commit()
+            db.commit()
+            member_usernames = [m.username for m in members]
+            if username not in member_usernames:
+                member_usernames.append(username)
+            team_name = team.name if team else ""
+            log_activity(
+                member_usernames,
+                f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
+            )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1108,6 +1151,9 @@ def create_team():
                 team_id=team.id,
             )
         db.commit()
+        log_activity(
+            username, f"{username} kullanıcısı {team_name} ekibini oluşturdu"
+        )
         return jsonify(success=True, team_id=team.id)
     finally:
         db.close()
@@ -1124,11 +1170,22 @@ def delete_team():
             return jsonify(success=False, error="Ekip bulunamadı")
         if team.creator != username and not is_admin(username):
             return jsonify(success=False, error="Yetkiniz yok")
+        members = (
+            db.query(TeamMember).filter_by(team_id=team_id, accepted=True).all()
+        )
+        member_usernames = [m.username for m in members]
+        if username not in member_usernames:
+            member_usernames.append(username)
+        team_name = team.name
         db.query(TeamMember).filter_by(team_id=team_id).delete()
         db.query(TeamFile).filter_by(team_id=team_id).delete()
         db.query(Notification).filter_by(team_id=team_id).delete()
         db.delete(team)
         db.commit()
+        log_activity(
+            member_usernames,
+            f"{username} kullanıcısı {team_name} ekibini sildi",
+        )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1146,8 +1203,22 @@ def leave_team():
             .first()
         )
         if membership:
+            team = db.query(Team).filter_by(id=team_id).first()
+            members = (
+                db.query(TeamMember)
+                .filter_by(team_id=team_id, accepted=True)
+                .all()
+            )
+            member_usernames = [m.username for m in members]
+            if username not in member_usernames:
+                member_usernames.append(username)
+            team_name = team.name if team else ""
             db.delete(membership)
             db.commit()
+            log_activity(
+                member_usernames,
+                f"{username} kullanıcısı {team_name} ekibinden ayrıldı",
+            )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1173,8 +1244,22 @@ def remove_member():
             .first()
         )
         if membership:
+            members = (
+                db.query(TeamMember)
+                .filter_by(team_id=team_id, accepted=True)
+                .all()
+            )
+            member_usernames = [m.username for m in members]
+            for u in [member, requester]:
+                if u not in member_usernames:
+                    member_usernames.append(u)
+            team_name = team.name
             db.delete(membership)
             db.commit()
+            log_activity(
+                member_usernames,
+                f"{requester} kullanıcısı {team_name} ekibinden {member} kullanıcısını çıkardı",
+            )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1372,11 +1457,18 @@ def accept_team():
         membership.accepted = True
         db.commit()
         team = db.query(Team).filter_by(id=team_id).first()
+        members = db.query(TeamMember).filter_by(team_id=team_id, accepted=True).all()
+        member_usernames = [m.username for m in members]
+        team_name = team.name if team else ""
         if team:
             create_notification(
                 team.creator,
                 f"{username} kullanıcısı {team.name} ekibine katılma davetini kabul etti.",
             )
+        log_activity(
+            member_usernames,
+            f"{username} kullanıcısı {team_name} ekibine katıldı",
+        )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1398,10 +1490,9 @@ def reject_team():
             db.delete(membership)
             db.commit()
             if team:
-                create_notification(
-                    team.creator,
-                    f"{username} kullanıcısı {team.name} ekibine katılma davetini reddetti.",
-                )
+                msg = f"{username} kullanıcısı {team.name} ekibine katılma davetini reddetti"
+                create_notification(team.creator, msg)
+                log_activity([team.creator, username], msg)
         return jsonify(success=True)
     finally:
         db.close()
