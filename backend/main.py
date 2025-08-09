@@ -746,8 +746,8 @@ def list_files():
             .all()
         }
         counts = {
-            (dl.username, dl.filename): cnt
-            for dl.username, dl.filename, cnt in db.query(
+            (username, filename): cnt
+            for username, filename, cnt in db.query(
                 DownloadLog.username,
                 DownloadLog.filename,
                 func.count(),
