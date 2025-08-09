@@ -718,8 +718,19 @@ function renderFiles() {
         titleTd.textContent = adminMode ? `${file.username} - ${file.title}` : file.title;
         if (file.link) {
             const linkBtn = document.createElement('button');
-            linkBtn.className = 'btn btn-sm btn-outline-primary ms-2';
+            linkBtn.className = 'btn btn-sm ms-2';
             linkBtn.textContent = 'Link';
+            if (file.rejected) {
+                linkBtn.classList.add('btn-danger');
+                linkBtn.title = 'Reddedildi';
+                linkBtn.disabled = true;
+            } else if (file.approved) {
+                linkBtn.classList.add('btn-success');
+                linkBtn.title = 'Onaylandı';
+            } else {
+                linkBtn.classList.add('btn-warning');
+                linkBtn.title = 'Onay bekliyor';
+            }
             linkBtn.addEventListener('click', async () => {
                 const url = window.location.origin + file.link;
                 try {
@@ -739,24 +750,6 @@ function renderFiles() {
                 setTimeout(() => msg.remove(), 2000);
             });
             titleTd.appendChild(linkBtn);
-        }
-        if (file.link || file.approved || file.rejected) {
-            const statusBtn = document.createElement('button');
-            let cls, text;
-            if (file.rejected) {
-                cls = 'btn-danger';
-                text = 'Reddedildi';
-            } else if (file.approved) {
-                cls = 'btn-success';
-                text = 'Onaylandı';
-            } else {
-                cls = 'btn-warning';
-                text = 'Onay bekliyor';
-            }
-            statusBtn.className = 'btn btn-sm ms-2 ' + cls;
-            statusBtn.textContent = text;
-            statusBtn.disabled = true;
-            titleTd.appendChild(statusBtn);
         }
         tr.appendChild(titleTd);
 
