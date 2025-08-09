@@ -22,6 +22,8 @@ class DownloadLog(Base):
     username = Column(String, index=True)
     filename = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String)
+    country = Column(String)
 
 
 class Team(Base):
