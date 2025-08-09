@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Boolean
 
 from database import Base, engine
@@ -68,7 +68,7 @@ class Activity(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True)
     message = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=3))
 
 
 class UserShare(Base):
