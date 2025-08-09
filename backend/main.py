@@ -217,7 +217,7 @@ def is_department_manager(username: str) -> bool:
         manager_attr = getattr(entry, "manager", None)
         reports_attr = getattr(entry, "directReports", None)
         has_no_manager = not manager_attr or not manager_attr.value
-        has_reports = reports_attr and len(reports_attr) > 0
+        has_reports = len(reports_attr) > 0 if reports_attr else False
         return has_no_manager and has_reports
     except Exception:
         return False
