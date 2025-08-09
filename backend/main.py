@@ -182,6 +182,41 @@ def get_manager_info(username: str):
     return "", ""
 
 
+def is_department_manager(username: str) -> bool:
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return False
+        search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
+        conn.search(
+            LDAP_BASE_DN,
+            search_filter,
+            attributes=["manager", "directReports"],
+        )
+        if not conn.entries:
+            return False
+        entry = conn.entries[0]
+        manager_attr = getattr(entry, "manager", None)
+        reports_attr = getattr(entry, "directReports", None)
+        has_no_manager = not manager_attr or not manager_attr.value
+        has_reports = reports_attr and len(reports_attr) > 0
+        return has_no_manager and has_reports
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
 def authenticate_user(username: str, password: str) -> bool:
     """Authenticate a user against LDAP."""
     server = ldap3.Server(LDAP_SERVER)
@@ -280,7 +315,13 @@ def find_share_token(username: str, filename: str):
         db.close()
 
 
-def create_share_link(token: str, username: str, filename: str, expires_at=None):
+def create_share_link(
+    token: str,
+    username: str,
+    filename: str,
+    expires_at=None,
+    approved: bool = False,
+):
     db = SessionLocal()
     try:
         db.add(
@@ -289,7 +330,7 @@ def create_share_link(token: str, username: str, filename: str, expires_at=None)
                 username=username,
                 filename=filename,
                 expires_at=expires_at,
-                approved=False,
+                approved=approved,
                 rejected=False,
             )
         )
@@ -710,14 +751,23 @@ def share_file():
         expires_at = None
         if days and int(days) > 0:
             expires_at = datetime.utcnow() + timedelta(days=int(days))
-        create_share_link(token, username, filename, expires_at)
-        send_approval_email(username, filename, token)
-        mgr_user, _ = get_manager_info(username)
-        if mgr_user:
+        auto_approve = is_department_manager(username)
+        create_share_link(
+            token, username, filename, expires_at, approved=auto_approve
+        )
+        if auto_approve:
             create_notification(
-                mgr_user,
-                f"'{filename}' dosyası için onay bekleyen paylaşım",
+                username,
+                f"'{filename}' paylaşımı onaylandı",
             )
+        else:
+            send_approval_email(username, filename, token)
+            mgr_user, _ = get_manager_info(username)
+            if mgr_user:
+                create_notification(
+                    mgr_user,
+                    f"'{filename}' dosyası için onay bekleyen paylaşım",
+                )
     return jsonify(success=True, link=f"/public/{token}")
 
 
