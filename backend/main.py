@@ -146,6 +146,15 @@ class Notification(Base):
     read = Column(Boolean, default=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
 
+
+class Activity(Base):
+    __tablename__ = "activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    message = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class UserShare(Base):
     __tablename__ = "user_shares"
 
@@ -250,6 +259,18 @@ def create_notification(username: str, message: str, team_id=None):
     db = SessionLocal()
     try:
         db.add(Notification(username=username, message=message, team_id=team_id))
+        db.commit()
+    finally:
+        db.close()
+
+
+def log_activity(usernames, message: str):
+    if isinstance(usernames, str):
+        usernames = [usernames]
+    db = SessionLocal()
+    try:
+        for u in usernames:
+            db.add(Activity(username=u, message=message))
         db.commit()
     finally:
         db.close()
@@ -434,13 +455,15 @@ def delete_share_notification(username: str, filename: str):
         db.close()
 
 
-def log_download(username: str, filename: str):
+def log_download(username: str, filename: str, downloader: str | None = None):
     db = SessionLocal()
     try:
         db.add(DownloadLog(username=username, filename=filename))
         db.commit()
     finally:
         db.close()
+    if downloader and downloader != username:
+        log_activity(username, f"{downloader} kullanıcısı '{filename}' dosyanı indirdi")
 
 
 def set_file_expiry(username: str, filename: str, expires_dt):
@@ -787,7 +810,7 @@ def download_file():
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
-    log_download(username, filename)
+    log_download(username, filename, session.get("username"))
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
@@ -939,6 +962,7 @@ def preview_file(token):
                     return jsonify(files=zf.namelist())
             return jsonify(files=[])
         if request.args.get("download") == "1":
+            log_download(link.username, link.filename, session.get("username"))
             return send_file(
                 file_path,
                 as_attachment=True,
@@ -1123,7 +1147,7 @@ def public_download_file(token):
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
-    log_download(username, filename)
+    log_download(username, filename, session.get("username"))
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
@@ -1292,6 +1316,8 @@ def add_files_to_team():
         )
         if not membership and not is_admin(username):
             return jsonify(success=False, error="Yetkiniz yok")
+        team = db.query(Team).filter_by(id=team_id).first()
+        members = db.query(TeamMember).filter_by(team_id=team_id, accepted=True).all()
         for fname in filenames:
             db.add(
                 TeamFile(
@@ -1302,6 +1328,42 @@ def add_files_to_team():
                 )
             )
         db.commit()
+        team_name = team.name if team else ""
+        member_usernames = [m.username for m in members]
+        for fname in filenames:
+            log_activity(
+                member_usernames,
+                f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
+            )
+        return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/teams/delete_file", methods=["POST"])
+def delete_team_file():
+    username = request.form.get("username")
+    team_id = request.form.get("team_id")
+    filename = request.form.get("filename")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username)
+            .first()
+        )
+        team = db.query(Team).filter_by(id=team_id).first()
+        if not membership and not is_admin(username):
+            return jsonify(success=False, error="Yetkiniz yok")
+        db.query(TeamFile).filter_by(team_id=team_id, filename=filename).delete()
+        db.commit()
+        members = db.query(TeamMember).filter_by(team_id=team_id, accepted=True).all()
+        member_usernames = [m.username for m in members]
+        team_name = team.name if team else ""
+        log_activity(
+            member_usernames,
+            f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
+        )
         return jsonify(success=True)
     finally:
         db.close()
@@ -1497,6 +1559,28 @@ def delete_notifications():
             ).delete(synchronize_session=False)
             db.commit()
         return jsonify(success=True)
+    finally:
+        db.close()
+
+
+@app.route("/activities", methods=["POST"])
+def activities():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        query = db.query(Activity).order_by(Activity.created_at.desc())
+        if not is_admin(username):
+            query = query.filter_by(username=username)
+        acts = query.all()
+        data = [
+            {
+                "username": a.username,
+                "message": a.message,
+                "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+            }
+            for a in acts
+        ]
+        return jsonify(activities=data)
     finally:
         db.close()
 
