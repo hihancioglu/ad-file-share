@@ -621,6 +621,7 @@ def list_files():
                 }
                 for l in db.query(ShareLink)
                 .filter_by(username=username)
+                .filter(ShareLink.rejected == False)
                 .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
                 .all()
             }
@@ -673,6 +674,7 @@ def list_files():
                 "rejected": l.rejected,
             }
             for l in db.query(ShareLink)
+            .filter(ShareLink.rejected == False)
             .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
             .all()
         }
