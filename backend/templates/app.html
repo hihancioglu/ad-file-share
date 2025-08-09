@@ -271,18 +271,38 @@ if (!username) {
 
 const isAdmin = localStorage.getItem('admin') === '1';
 const adminBtn = document.getElementById('admin-btn');
-let adminMode = false;
+const ADMIN_MODE_KEY = 'adminMode';
+const USER_STORAGE_KEY = 'selectedFiles';
+const ADMIN_STORAGE_KEY = 'adminSelectedFiles';
+let adminMode = localStorage.getItem(ADMIN_MODE_KEY) === '1';
+const selected = new Set();
+function loadSelected() {
+    selected.clear();
+    const key = adminMode ? ADMIN_STORAGE_KEY : USER_STORAGE_KEY;
+    JSON.parse(localStorage.getItem(key) || '[]').forEach(v => selected.add(v));
+}
+function updateSelectedStorage() {
+    const key = adminMode ? ADMIN_STORAGE_KEY : USER_STORAGE_KEY;
+    localStorage.setItem(key, JSON.stringify(Array.from(selected)));
+    localStorage.setItem(ADMIN_MODE_KEY, adminMode ? '1' : '0');
+}
 if (isAdmin) {
     adminBtn.classList.remove('d-none');
+    adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
     adminBtn.addEventListener('click', () => {
+        updateSelectedStorage();
         adminMode = !adminMode;
         adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
+        loadSelected();
         loadFiles();
         loadTeams();
         loadPending();
         loadActivities();
     });
+} else {
+    adminMode = false;
 }
+loadSelected();
 
 const displayName = localStorage.getItem('name') || username;
 document.getElementById('username-display').textContent = displayName;
@@ -290,17 +310,11 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.removeItem('username');
     localStorage.removeItem('name');
     localStorage.removeItem('selectedFiles');
+    localStorage.removeItem('adminSelectedFiles');
+    localStorage.removeItem('adminMode');
     localStorage.removeItem('admin');
     window.location.href = '/login';
 });
-
-const STORAGE_KEY = 'selectedFiles';
-const selected = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
-function updateSelectedStorage() {
-    if (!adminMode) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(selected)));
-    }
-}
 const deleteBtn = document.getElementById('delete-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
@@ -774,11 +788,7 @@ function renderFiles() {
 }
 
 async function loadFiles() {
-    // Restore persisted selections so auto-refresh preserves checkbox state
-    if (!adminMode) {
-        selected.clear();
-        JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').forEach(v => selected.add(v));
-    }
+    loadSelected(); // Restore persisted selections so auto-refresh preserves checkbox state
     const formData = new FormData();
     formData.append('username', username);
     if (adminMode) {
@@ -787,18 +797,15 @@ async function loadFiles() {
     const res = await fetch('/list', { method: 'POST', body: formData });
     const json = await res.json();
     currentFiles = json.files;
-    if (adminMode) {
-        selected.clear();
-        updateSelectedStorage();
-    } else {
-        const existing = new Set(json.files.map(f => f.title));
-        for (const value of Array.from(selected)) {
-            if (!existing.has(value)) {
-                selected.delete(value);
-            }
+    const existing = new Set(
+        json.files.map(f => (adminMode ? `${f.username}|${f.title}` : f.title))
+    );
+    for (const value of Array.from(selected)) {
+        if (!existing.has(value)) {
+            selected.delete(value);
         }
-        updateSelectedStorage();
     }
+    updateSelectedStorage();
     renderFiles();
     if (json.files.some(f => f.link && !f.approved)) {
         setTimeout(loadFiles, 5000);
