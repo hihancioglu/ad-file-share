@@ -57,7 +57,9 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True)
     message = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(
+        DateTime, default=lambda: datetime.utcnow() + timedelta(hours=3)
+    )
     read = Column(Boolean, default=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
 
