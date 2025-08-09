@@ -476,6 +476,7 @@ def login():
         conn.unbind()
         session["username"] = username
         given, sn = get_user_names(username)
+        log_activity(username, f"{username} kullanıcısı sisteme giriş yaptı")
         return jsonify(
             success=True,
             username=username,
@@ -1747,6 +1748,31 @@ def activities():
             {
                 "username": a.username,
                 "message": a.message,
+                "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+            }
+            for a in acts
+        ]
+        return jsonify(activities=data)
+    finally:
+        db.close()
+
+
+@app.route("/login-activities", methods=["POST"])
+def login_activities():
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        query = (
+            db.query(Activity)
+            .filter(Activity.message.like("%giriş yaptı%"))
+            .order_by(Activity.created_at.desc())
+        )
+        if not is_admin(username):
+            query = query.filter_by(username=username)
+        acts = query.all()
+        data = [
+            {
+                "username": a.username,
                 "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
             }
             for a in acts

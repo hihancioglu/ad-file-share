@@ -26,6 +26,7 @@
                     <ul id="team-menu" class="nav flex-column ms-3"></ul>
                 </li>
                 <li class="nav-item"><a class="nav-link" href="#activities"><i class="bi bi-clock-history me-2"></i>Aktiviteler</a></li>
+                <li class="nav-item d-none" id="logins-menu-item"><a class="nav-link" href="#logins"><i class="bi bi-box-arrow-in-right me-2"></i>Girişler</a></li>
             </ul>
         </div>
     </nav>
@@ -187,6 +188,18 @@
                 <tbody></tbody>
             </table>
         </section>
+        <section id="logins" class="d-none">
+            <h2>Kullanıcı Girişleri</h2>
+            <table id="login-activities-table" class="table">
+                <thead>
+                    <tr>
+                        <th>Kullanıcı</th>
+                        <th>Tarih</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
     </div>
 </div>
 
@@ -315,6 +328,7 @@ function updateSelectedStorage() {
 }
 if (isAdmin) {
     adminBtn.classList.remove('d-none');
+    document.getElementById('logins-menu-item').classList.remove('d-none');
     adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
     adminBtn.addEventListener('click', () => {
         updateSelectedStorage();
@@ -325,6 +339,7 @@ if (isAdmin) {
         loadTeams();
         loadPending();
         loadActivities();
+        loadLogins();
     });
 } else {
     adminMode = false;
@@ -375,6 +390,7 @@ let shareExpiry = '';
 let currentFiles = [];
 let notifications = [];
 let activities = [];
+let loginActivities = [];
 
 const sections = {
     upload: document.getElementById('upload'),
@@ -384,7 +400,8 @@ const sections = {
     pending: document.getElementById('pending'),
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details'),
-    activities: document.getElementById('activities')
+    activities: document.getElementById('activities'),
+    logins: document.getElementById('logins')
 };
 
 searchInput.addEventListener('input', () => {
@@ -572,6 +589,8 @@ function showSection(id) {
             loadPending();
         } else if (id === 'activities') {
             loadActivities();
+        } else if (id === 'logins') {
+            loadLogins();
         }
     }
 }
@@ -1023,11 +1042,27 @@ async function loadActivities() {
     fd.append('username', username);
     const res = await fetch('/activities', { method: 'POST', body: fd });
     const json = await res.json();
+    activities = json.activities;
     const tbody = document.querySelector('#activities-table tbody');
     tbody.innerHTML = '';
     json.activities.forEach(act => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${act.username}</td><td>${act.message}</td><td>${act.created_at}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function loadLogins() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/login-activities', { method: 'POST', body: fd });
+    const json = await res.json();
+    loginActivities = json.activities;
+    const tbody = document.querySelector('#login-activities-table tbody');
+    tbody.innerHTML = '';
+    json.activities.forEach(act => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${act.username}</td><td>${act.created_at}</td>`;
         tbody.appendChild(tr);
     });
 }
