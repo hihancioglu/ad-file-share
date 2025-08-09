@@ -719,17 +719,24 @@ function renderFiles() {
         if (file.link) {
             const linkBtn = document.createElement('button');
             linkBtn.className = 'btn btn-sm ms-2';
-            linkBtn.textContent = 'Link';
+            const linkIcon = document.createElement('i');
+            linkIcon.classList.add('bi', 'me-1');
+            linkBtn.appendChild(linkIcon);
+            linkBtn.append('Link');
+
             if (file.rejected) {
                 linkBtn.classList.add('btn-danger');
                 linkBtn.title = 'Reddedildi';
                 linkBtn.disabled = true;
+                linkIcon.classList.add('bi-x');
             } else if (file.approved) {
                 linkBtn.classList.add('btn-success');
                 linkBtn.title = 'Onaylandı';
+                linkIcon.classList.add('bi-check');
             } else {
                 linkBtn.classList.add('btn-warning');
                 linkBtn.title = 'Onay bekliyor';
+                linkIcon.classList.add('bi-hourglass-split');
             }
             linkBtn.addEventListener('click', async () => {
                 const url = window.location.origin + file.link;
