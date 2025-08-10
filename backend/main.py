@@ -1784,30 +1784,6 @@ def activities():
         db.close()
 
 
-@app.route("/login-activities", methods=["POST"])
-def login_activities():
-    username = request.form.get("username")
-    db = SessionLocal()
-    try:
-        query = (
-            db.query(Activity)
-            .filter_by(category="login")
-            .order_by(Activity.created_at.desc())
-        )
-        if not is_admin(username):
-            query = query.filter_by(username=username)
-        acts = query.all()
-        data = [
-            {
-                "username": a.username,
-                "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
-            }
-            for a in acts
-        ]
-        return jsonify(activities=data)
-    finally:
-        db.close()
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
