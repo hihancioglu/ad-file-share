@@ -63,3 +63,12 @@ def add_missing_columns():
             conn.execute(
                 text("ALTER TABLE download_logs ADD COLUMN country VARCHAR")
             )
+
+    activity_cols = [col["name"] for col in inspector.get_columns("activities")]
+    if "category" not in activity_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE activities ADD COLUMN category VARCHAR DEFAULT 'general'"
+                )
+            )
