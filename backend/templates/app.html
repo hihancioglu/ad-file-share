@@ -181,6 +181,7 @@
                     <tr>
                         <th>Kullanıcı</th>
                         <th>Mesaj</th>
+                        <th>Kategori</th>
                         <th>Tarih</th>
                     </tr>
                 </thead>
@@ -1028,7 +1029,7 @@ async function loadActivities() {
     tbody.innerHTML = '';
     json.activities.forEach(act => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${act.username}</td><td>${act.message}</td><td>${act.created_at}</td>`;
+        tr.innerHTML = `<td>${act.username}</td><td>${act.message}</td><td>${act.category}</td><td>${act.created_at}</td>`;
         tbody.appendChild(tr);
     });
 }

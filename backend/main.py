@@ -147,7 +147,11 @@ def log_activity(usernames, message: str, category: str = "general"):
     db = SessionLocal()
     try:
         for u in usernames:
-            db.add(Activity(username=u, message=message, category=category))
+            msg = message
+            prefix = f"{u} kullanıcısı "
+            if msg.startswith(prefix):
+                msg = msg[len(prefix):]
+            db.add(Activity(username=u, message=msg, category=category))
         db.commit()
     finally:
         db.close()
@@ -1770,15 +1774,20 @@ def activities():
         if not is_admin(username):
             query = query.filter_by(username=username)
         acts = query.all()
-        data = [
-            {
-                "username": a.username,
-                "message": a.message,
-                "category": a.category,
-                "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
-            }
-            for a in acts
-        ]
+        data = []
+        for a in acts:
+            msg = a.message
+            prefix = f"{a.username} kullanıcısı "
+            if msg.startswith(prefix):
+                msg = msg[len(prefix):]
+            data.append(
+                {
+                    "username": a.username,
+                    "message": msg,
+                    "category": a.category,
+                    "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+                }
+            )
         return jsonify(activities=data)
     finally:
         db.close()
