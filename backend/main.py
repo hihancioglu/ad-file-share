@@ -141,13 +141,13 @@ def create_notification(username: str, message: str, team_id=None):
         db.close()
 
 
-def log_activity(usernames, message: str):
+def log_activity(usernames, message: str, category: str = "general"):
     if isinstance(usernames, str):
         usernames = [usernames]
     db = SessionLocal()
     try:
         for u in usernames:
-            db.add(Activity(username=u, message=message))
+            db.add(Activity(username=u, message=message, category=category))
         db.commit()
     finally:
         db.close()
@@ -403,7 +403,11 @@ def log_download(username: str, filename: str, downloader: str | None = None):
     finally:
         db.close()
     if downloader and downloader != username:
-        log_activity(username, f"{downloader} kullanıcısı '{filename}' dosyanı indirdi")
+        log_activity(
+            username,
+            f"{downloader} kullanıcısı '{filename}' dosyanı indirdi",
+            "download",
+        )
 
 
 def set_file_expiry(username: str, filename: str, expires_dt):
@@ -476,7 +480,11 @@ def login():
         conn.unbind()
         session["username"] = username
         given, sn = get_user_names(username)
-        log_activity(username, f"{username} kullanıcısı sisteme giriş yaptı")
+        log_activity(
+            username,
+            f"{username} kullanıcısı sisteme giriş yaptı",
+            "login",
+        )
         return jsonify(
             success=True,
             username=username,
@@ -629,6 +637,7 @@ def upload_file():
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
+                "upload",
             )
             return jsonify(success=True, filenames=[final_name])
         return jsonify(success=True, chunk_index=chunk_index)
@@ -650,6 +659,7 @@ def upload_file():
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
+                "upload",
             )
 
     return jsonify(success=True, filenames=uploaded)
@@ -855,7 +865,7 @@ def delete_file():
     delete_share_link(username, filename)
     delete_share_notification(username, filename)
     log_activity(
-        username, f"{username} kullanıcısı '{filename}' dosyasını sildi"
+        username, f"{username} kullanıcısı '{filename}' dosyasını sildi", "delete"
     )
     return jsonify(success=True)
 
@@ -896,6 +906,7 @@ def share_file():
         log_activity(
             username,
             f"{username} kullanıcısı '{filename}' dosyası için açık paylaşım oluşturdu",
+            "share_public",
         )
         if auto_approve:
             create_notification(
@@ -922,6 +933,7 @@ def delete_share():
     log_activity(
         username,
         f"{username} kullanıcısı '{filename}' dosyasının paylaşımını kaldırdı",
+        "share_public_delete",
     )
     return jsonify(success=True)
 
@@ -1070,6 +1082,7 @@ def share_with_user():
         log_activity(
             [sender, recipient],
             f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
+            "share_user",
         )
         return jsonify(success=True)
     finally:
@@ -1162,6 +1175,7 @@ def delete_outgoing():
             log_activity(
                 [username, target],
                 f"{username} kullanıcısı {target} kullanıcısına paylaştığı '{filename}' dosyasını kaldırdı",
+                "share_user_delete",
             )
         elif target_type == "team":
             team_id = int(target)
@@ -1182,6 +1196,7 @@ def delete_outgoing():
             log_activity(
                 member_usernames,
                 f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
+                "share_team_delete",
             )
         return jsonify(success=True)
     finally:
@@ -1304,7 +1319,9 @@ def create_team():
             )
         db.commit()
         log_activity(
-            username, f"{username} kullanıcısı {team_name} ekibini oluşturdu"
+            username,
+            f"{username} kullanıcısı {team_name} ekibini oluşturdu",
+            "team_create",
         )
         return jsonify(success=True, team_id=team.id)
     finally:
@@ -1337,6 +1354,7 @@ def delete_team():
         log_activity(
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibini sildi",
+            "team_delete",
         )
         return jsonify(success=True)
     finally:
@@ -1370,6 +1388,7 @@ def leave_team():
             log_activity(
                 member_usernames,
                 f"{username} kullanıcısı {team_name} ekibinden ayrıldı",
+                "team_leave",
             )
         return jsonify(success=True)
     finally:
@@ -1411,6 +1430,7 @@ def remove_member():
             log_activity(
                 member_usernames,
                 f"{requester} kullanıcısı {team_name} ekibinden {member} kullanıcısını çıkardı",
+                "team_remove_member",
             )
         return jsonify(success=True)
     finally:
@@ -1500,6 +1520,7 @@ def add_files_to_team():
             log_activity(
                 member_usernames,
                 f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
+                "team_add_file",
             )
         return jsonify(success=True)
     finally:
@@ -1529,6 +1550,7 @@ def delete_team_file():
         log_activity(
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
+            "team_delete_file",
         )
         return jsonify(success=True)
     finally:
@@ -1634,6 +1656,7 @@ def accept_team():
         log_activity(
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibine katıldı",
+            "team_accept",
         )
         return jsonify(success=True)
     finally:
@@ -1658,7 +1681,7 @@ def reject_team():
             if team:
                 msg = f"{username} kullanıcısı {team.name} ekibine katılma davetini reddetti"
                 create_notification(team.creator, msg)
-                log_activity([team.creator, username], msg)
+                log_activity([team.creator, username], msg, "team_reject")
         return jsonify(success=True)
     finally:
         db.close()
@@ -1738,9 +1761,12 @@ def delete_notifications():
 @app.route("/activities", methods=["POST"])
 def activities():
     username = request.form.get("username")
+    category = request.form.get("category")
     db = SessionLocal()
     try:
         query = db.query(Activity).order_by(Activity.created_at.desc())
+        if category:
+            query = query.filter_by(category=category)
         if not is_admin(username):
             query = query.filter_by(username=username)
         acts = query.all()
@@ -1748,6 +1774,7 @@ def activities():
             {
                 "username": a.username,
                 "message": a.message,
+                "category": a.category,
                 "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
             }
             for a in acts
@@ -1764,7 +1791,7 @@ def login_activities():
     try:
         query = (
             db.query(Activity)
-            .filter(Activity.message.like("%giriş yaptı%"))
+            .filter_by(category="login")
             .order_by(Activity.created_at.desc())
         )
         if not is_admin(username):

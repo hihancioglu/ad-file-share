@@ -72,6 +72,7 @@ class Activity(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True)
     message = Column(String)
+    category = Column(String, index=True, default="general")
     created_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=3))
 
 
