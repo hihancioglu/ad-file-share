@@ -186,16 +186,6 @@
                 </thead>
                 <tbody></tbody>
             </table>
-            <h2>Kullanıcı Girişleri</h2>
-            <table id="login-activities-table" class="table">
-                <thead>
-                    <tr>
-                        <th>Kullanıcı</th>
-                        <th>Tarih</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
         </section>
     </div>
 </div>
@@ -1039,21 +1029,6 @@ async function loadActivities() {
     json.activities.forEach(act => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${act.username}</td><td>${act.message}</td><td>${act.created_at}</td>`;
-        tbody.appendChild(tr);
-    });
-    await loadLogins();
-}
-
-async function loadLogins() {
-    const fd = new FormData();
-    fd.append('username', username);
-    const res = await fetch('/login-activities', { method: 'POST', body: fd });
-    const json = await res.json();
-    const tbody = document.querySelector('#login-activities-table tbody');
-    tbody.innerHTML = '';
-    json.activities.forEach(act => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${act.username}</td><td>${act.created_at}</td>`;
         tbody.appendChild(tr);
     });
 }
