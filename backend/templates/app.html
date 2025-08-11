@@ -1229,7 +1229,18 @@ async function viewTeam(teamId) {
     team.files.forEach(f => {
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.innerHTML = `<span>${f.filename} (${f.username})</span>`;
+        const span = document.createElement('span');
+        span.textContent = `${f.filename} (${f.username})`;
+        li.appendChild(span);
+        const actions = document.createElement('div');
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-primary me-2';
+        editBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+        editBtn.addEventListener('click', () => {
+            const url = `/teams/edit?username=${username}&team_id=${team.id}&filename=${encodeURIComponent(f.filename)}`;
+            window.open(url, '_blank');
+        });
+        actions.appendChild(editBtn);
         if (adminMode || f.username === username || team.creator === username) {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-danger';
@@ -1242,8 +1253,9 @@ async function viewTeam(teamId) {
                 await fetch('/teams/delete_file', { method: 'POST', body: fd });
                 viewTeam(team.id);
             });
-            li.appendChild(btn);
+            actions.appendChild(btn);
         }
+        li.appendChild(actions);
         filesList.appendChild(li);
     });
     const container = document.getElementById('add-member-container');

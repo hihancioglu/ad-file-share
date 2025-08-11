@@ -3,6 +3,8 @@ import secrets
 from datetime import datetime, timedelta
 import mimetypes
 import zipfile
+import json
+import hashlib
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -63,6 +65,9 @@ CORS(app, supports_credentials=True)
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
+
+ONLYOFFICE_URL = os.getenv("ONLYOFFICE_URL", "http://localhost:8081")
+ONLYOFFICE_INTERNAL_URL = os.getenv("ONLYOFFICE_INTERNAL_URL", "http://backend:8000")
 
 
 def get_unique_filename(directory: str, filename: str) -> str:
@@ -1660,6 +1665,126 @@ def team_details():
         )
     finally:
         db.close()
+
+
+@app.route("/teams/edit")
+def edit_team_file():
+    username = request.args.get("username")
+    team_id = request.args.get("team_id")
+    filename = request.args.get("filename")
+    db = SessionLocal()
+    try:
+        membership = (
+            db.query(TeamMember)
+            .filter_by(team_id=team_id, username=username, accepted=True)
+            .first()
+        )
+        if not membership and not is_admin(username):
+            return "Yetkiniz yok", 403
+        tf = (
+            db.query(TeamFile)
+            .filter_by(team_id=team_id, filename=filename)
+            .first()
+        )
+        if not tf:
+            return "Dosya bulunamadı", 404
+        file_path = os.path.join(DATA_DIR, tf.username, filename)
+        if not os.path.exists(file_path):
+            return "Dosya bulunamadı", 404
+        file_ext = os.path.splitext(filename)[1][1:]
+        key_source = f"{team_id}_{filename}_{os.path.getmtime(file_path)}"
+        key = hashlib.md5(key_source.encode()).hexdigest()
+        file_url = (
+            f"{ONLYOFFICE_INTERNAL_URL}/onlyoffice/file/{team_id}/{filename}"
+        )
+        callback_url = (
+            f"{ONLYOFFICE_INTERNAL_URL}/onlyoffice/callback/{team_id}/{filename}"
+        )
+        config = {
+            "document": {
+                "fileType": file_ext,
+                "key": key,
+                "title": filename,
+                "url": file_url,
+                "permissions": {"edit": True, "download": True},
+            },
+            "editorConfig": {
+                "callbackUrl": callback_url,
+                "user": {
+                    "id": username,
+                    "name": get_full_name(username),
+                },
+            },
+        }
+        return render_template(
+            "editor.html",
+            config=json.dumps(config),
+            onlyoffice_url=ONLYOFFICE_URL,
+        )
+    finally:
+        db.close()
+
+
+@app.route("/onlyoffice/file/<int:team_id>/<path:filename>")
+def onlyoffice_file(team_id, filename):
+    db = SessionLocal()
+    try:
+        tf = (
+            db.query(TeamFile)
+            .filter_by(team_id=team_id, filename=filename)
+            .first()
+        )
+        if not tf:
+            return "Dosya bulunamadı", 404
+        file_path = os.path.join(DATA_DIR, tf.username, filename)
+        if not os.path.exists(file_path):
+            return "Dosya bulunamadı", 404
+        return send_file(file_path)
+    finally:
+        db.close()
+
+
+@app.route("/onlyoffice/callback/<int:team_id>/<path:filename>", methods=["POST"])
+def onlyoffice_callback(team_id, filename):
+    data = request.get_json()
+    status = data.get("status")
+    if status in (2, 6):
+        db = SessionLocal()
+        try:
+            tf = (
+                db.query(TeamFile)
+                .filter_by(team_id=team_id, filename=filename)
+                .first()
+            )
+            if tf:
+                file_url = data.get("url")
+                if file_url:
+                    resp = requests.get(file_url)
+                    if resp.ok:
+                        file_path = os.path.join(DATA_DIR, tf.username, filename)
+                        with open(file_path, "wb") as f:
+                            f.write(resp.content)
+                        members = (
+                            db.query(TeamMember)
+                            .filter_by(team_id=team_id, accepted=True)
+                            .all()
+                        )
+                        member_usernames = [m.username for m in members]
+                        team = db.query(Team).filter_by(id=team_id).first()
+                        editor = None
+                        users = data.get("users") or []
+                        if users:
+                            editor = users[0]
+                        if editor:
+                            team_name = team.name if team else ""
+                            log_activity(
+                                member_usernames,
+                                f"{editor} kullanıcısı {team_name} ekibinde '{filename}' dosyasını düzenledi",
+                                "team_edit_file",
+                            )
+        finally:
+            db.close()
+    return jsonify(error=0)
 
 
 @app.route("/teams/add_member", methods=["POST"])
