@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="{{ onlyoffice_url }}/web-apps/apps/api/documents/api.js"></script>
+</head>
+<body>
+  <div id="editor" style="width:100%; height:100vh;"></div>
+  <script>
+    var docEditor = new DocsAPI.DocEditor("editor", {{ config|safe }});
+  </script>
+</body>
+</html>

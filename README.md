@@ -11,6 +11,8 @@ docker-compose up --build
 ```
 
 The application will be available at `http://localhost:8080/`.
+An OnlyOffice Document Server is also started for collaborative editing at
+`http://localhost:8081/`.
 
 ## Configuration
 
@@ -27,3 +29,13 @@ user's manager through the Microsoft Graph API. Configure the following variable
 - `GRAPH_CLIENT_ID`
 - `GRAPH_CLIENT_SECRET`
 - `GRAPH_SENDER` for the account used to send mail
+
+### OnlyOffice
+
+The backend integrates with an OnlyOffice Document Server. To change the URLs
+used for the editor or internal callbacks, set:
+
+- `ONLYOFFICE_URL` – external URL of the Document Server (default:
+  `http://localhost:8081`)
+- `ONLYOFFICE_INTERNAL_URL` – URL used by the Document Server to reach the
+  backend (default: `http://backend:8000`)

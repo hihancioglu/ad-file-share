@@ -23,3 +23,12 @@ services:
     ports:
       - "5432:5432"
     restart: always
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    environment:
+      - JWT_ENABLED=false
+      - TZ=Europe/Istanbul
+    ports:
+      - "8081:80"
+    restart: always
