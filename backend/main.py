@@ -4,6 +4,21 @@ from datetime import datetime, timedelta
 import mimetypes
 import zipfile
 
+# Ensure previewed file types have proper MIME types
+mimetypes.add_type("image/png", ".png")
+mimetypes.add_type("image/jpeg", ".jpg")
+mimetypes.add_type("image/jpeg", ".jpeg")
+mimetypes.add_type("application/vnd.ms-excel", ".xls")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"
+)
+mimetypes.add_type("application/msword", ".doc")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docx",
+)
+mimetypes.add_type("text/csv", ".csv")
+
 import msal
 import requests
 

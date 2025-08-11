@@ -956,8 +956,9 @@ async function loadPending() {
         fileTd.appendChild(nameSpan);
 
         const ext = item.filename.split('.').pop().toLowerCase();
-        const previewable = ['pdf'];
+        const previewable = ['pdf', 'png', 'jpg', 'jpeg', 'xls', 'xlsx', 'doc', 'docx', 'csv'];
         const archiveExts = ['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'];
+        const imageExts = ['png', 'jpg', 'jpeg'];
         if (previewable.includes(ext) || archiveExts.includes(ext)) {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-outline-secondary ms-2';
@@ -969,6 +970,15 @@ async function loadPending() {
                     const res = await fetch(`/preview/${item.token}?list=1`);
                     const data = await res.json();
                     modalContent.innerHTML = `<ul class="mb-0">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
+                } else if (imageExts.includes(ext)) {
+                    modalContent.innerHTML = `<img src="/preview/${item.token}" class="img-fluid" />`;
+                } else if (ext === 'csv') {
+                    const res = await fetch(`/preview/${item.token}`);
+                    const text = await res.text();
+                    const pre = document.createElement('pre');
+                    pre.className = 'mb-0';
+                    pre.textContent = text;
+                    modalContent.appendChild(pre);
                 } else {
                     modalContent.innerHTML = `<iframe src="/preview/${item.token}" style="width:100%;height:400px;"></iframe>`;
                 }
