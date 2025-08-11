@@ -192,7 +192,7 @@
 </div>
 
 <div class="modal fade" id="userModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Kullanıcı Seç</h5>
@@ -250,7 +250,7 @@
 </div>
 
 <div class="modal fade" id="previewModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Önizleme</h5>
@@ -959,7 +959,6 @@ async function loadPending() {
         const previewable = ['pdf', 'png', 'jpg', 'jpeg', 'xls', 'xlsx', 'doc', 'docx', 'ppt', 'pptx', 'csv'];
         const archiveExts = ['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'];
         const imageExts = ['png', 'jpg', 'jpeg'];
-        const officeExts = ['xls', 'xlsx', 'doc', 'docx', 'ppt', 'pptx'];
         if (previewable.includes(ext) || archiveExts.includes(ext)) {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-outline-secondary ms-2';
@@ -980,11 +979,8 @@ async function loadPending() {
                     pre.className = 'mb-0';
                     pre.textContent = text;
                     modalContent.appendChild(pre);
-                } else if (officeExts.includes(ext)) {
-                    const fileUrl = encodeURIComponent(`${window.location.origin}/preview/${item.token}`);
-                    modalContent.innerHTML = `<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=${fileUrl}" style="width:100%;height:400px;" frameborder="0"></iframe>`;
                 } else {
-                    modalContent.innerHTML = `<iframe src="/preview/${item.token}" style="width:100%;height:400px;"></iframe>`;
+                    modalContent.innerHTML = `<iframe src="/preview/${item.token}" style="width:100%;height:600px;"></iframe>`;
                 }
                 const modal = new bootstrap.Modal(document.getElementById('previewModal'));
                 modal.show();
