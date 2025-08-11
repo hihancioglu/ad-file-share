@@ -68,7 +68,7 @@ CORS(app, supports_credentials=True)
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-ONLYOFFICE_URL = os.getenv("ONLYOFFICE_URL", "http://localhost:8081")
+ONLYOFFICE_URL = os.getenv("ONLYOFFICE_URL", "https://localhost:8443")
 ONLYOFFICE_INTERNAL_URL = os.getenv("ONLYOFFICE_INTERNAL_URL", "http://backend:8000")
 ONLYOFFICE_JWT_SECRET = os.getenv("ONLYOFFICE_JWT_SECRET")
 

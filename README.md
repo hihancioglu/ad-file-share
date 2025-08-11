@@ -11,8 +11,13 @@ docker-compose up --build
 ```
 
 The application will be available at `http://localhost:8080/`.
-An OnlyOffice Document Server is also started for collaborative editing at
-`http://localhost:8081/`.
+An OnlyOffice Document Server is also started for collaborative editing. It is
+configured with a self-signed certificate and exposed at
+`https://localhost:8443/`.
+
+The certificate and key used by the Document Server are stored in the `certs`
+directory (`onlyoffice.crt` and `onlyoffice.key`). Replace these files with your
+own certificate pair if needed.
 
 ## Configuration
 
@@ -36,7 +41,7 @@ The backend integrates with an OnlyOffice Document Server. To change the URLs
 used for the editor or internal callbacks, set:
 
 - `ONLYOFFICE_URL` – external URL of the Document Server (default:
-  `http://localhost:8081`)
+  `https://localhost:8443`)
 - `ONLYOFFICE_INTERNAL_URL` – URL used by the Document Server to reach the
   backend (default: `http://backend:8000`)
 - `ONLYOFFICE_JWT_SECRET` – shared secret for signing OnlyOffice requests. The

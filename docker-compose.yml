@@ -31,6 +31,12 @@ services:
       - JWT_ENABLED=true
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-secret}
       - TZ=Europe/Istanbul
+      - SSL_CERTIFICATE_PATH=/var/www/onlyoffice/Data/certs/onlyoffice.crt
+      - SSL_KEY_PATH=/var/www/onlyoffice/Data/certs/onlyoffice.key
     ports:
       - "8081:80"
+      - "8443:443"
+    volumes:
+      - ./certs/onlyoffice.crt:/var/www/onlyoffice/Data/certs/onlyoffice.crt:ro
+      - ./certs/onlyoffice.key:/var/www/onlyoffice/Data/certs/onlyoffice.key:ro
     restart: always
