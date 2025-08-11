@@ -49,7 +49,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     const res = await fetch('/login', { method: 'POST', body: data });
     const json = await res.json();
     if (json.success) {
-        localStorage.setItem('username', data.get('username'));
+        localStorage.setItem('username', data.get('username').toLowerCase());
         if (json.givenName) {
             localStorage.setItem('name', json.givenName);
         }
