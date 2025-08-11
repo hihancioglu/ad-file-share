@@ -481,11 +481,15 @@ def cleanup_expired_files():
 
 @app.route("/", methods=["GET"])
 def read_app():
+    if "username" not in session:
+        return redirect("/login")
     return render_template("app.html")
 
 
 @app.route("/login", methods=["GET"])
 def read_login():
+    if "username" in session:
+        return redirect("/")
     return render_template("login.html")
 
 
