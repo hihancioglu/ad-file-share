@@ -5,6 +5,7 @@ import mimetypes
 import zipfile
 import json
 import hashlib
+from urllib.parse import urlparse, urlunparse
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -1739,10 +1740,16 @@ def edit_team_file():
         if ONLYOFFICE_JWT_SECRET:
             token = jwt.encode(config, ONLYOFFICE_JWT_SECRET, algorithm="HS256")
             config["token"] = token
+        onlyoffice_url = ONLYOFFICE_URL
+        scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+        parsed = urlparse(onlyoffice_url)
+        if scheme == "https" and parsed.scheme == "http":
+            parsed = parsed._replace(scheme="https")
+            onlyoffice_url = urlunparse(parsed)
         return render_template(
             "editor.html",
             config=json.dumps(config),
-            onlyoffice_url=ONLYOFFICE_URL,
+            onlyoffice_url=onlyoffice_url,
         )
     finally:
         db.close()
