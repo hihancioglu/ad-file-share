@@ -28,6 +28,7 @@ mimetypes.add_type("text/csv", ".csv")
 
 import msal
 import requests
+import jwt
 
 from flask import (
     Flask,
@@ -68,6 +69,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 ONLYOFFICE_URL = os.getenv("ONLYOFFICE_URL", "http://localhost:8081")
 ONLYOFFICE_INTERNAL_URL = os.getenv("ONLYOFFICE_INTERNAL_URL", "http://backend:8000")
+ONLYOFFICE_JWT_SECRET = os.getenv("ONLYOFFICE_JWT_SECRET")
 
 
 def get_unique_filename(directory: str, filename: str) -> str:
@@ -82,6 +84,24 @@ def get_unique_filename(directory: str, filename: str) -> str:
 
 # Track in-progress uploads to handle name collisions for chunked uploads
 current_uploads = {}
+
+
+def verify_onlyoffice_request(req) -> bool:
+    if not ONLYOFFICE_JWT_SECRET:
+        return True
+    token = None
+    auth = req.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1]
+    if not token:
+        token = req.args.get("token")
+    if not token:
+        return False
+    try:
+        jwt.decode(token, ONLYOFFICE_JWT_SECRET, algorithms=["HS256"])
+        return True
+    except jwt.PyJWTError:
+        return False
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -1716,6 +1736,9 @@ def edit_team_file():
                 },
             },
         }
+        if ONLYOFFICE_JWT_SECRET:
+            token = jwt.encode(config, ONLYOFFICE_JWT_SECRET, algorithm="HS256")
+            config["token"] = token
         return render_template(
             "editor.html",
             config=json.dumps(config),
@@ -1727,6 +1750,8 @@ def edit_team_file():
 
 @app.route("/onlyoffice/file/<int:team_id>/<path:filename>")
 def onlyoffice_file(team_id, filename):
+    if not verify_onlyoffice_request(request):
+        return "Yetkisiz", 403
     db = SessionLocal()
     try:
         tf = (
@@ -1746,6 +1771,8 @@ def onlyoffice_file(team_id, filename):
 
 @app.route("/onlyoffice/callback/<int:team_id>/<path:filename>", methods=["POST"])
 def onlyoffice_callback(team_id, filename):
+    if not verify_onlyoffice_request(request):
+        return "Yetkisiz", 403
     data = request.get_json()
     status = data.get("status")
     if status in (2, 6):
