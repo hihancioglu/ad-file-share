@@ -3,6 +3,8 @@ import secrets
 from datetime import datetime, timedelta
 import mimetypes
 import zipfile
+import tempfile
+import subprocess
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -1065,6 +1067,30 @@ def preview_file(token):
                 as_attachment=True,
                 download_name=link.filename,
             )
+        ext = os.path.splitext(file_path)[1].lower()
+        office_exts = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}
+        if ext in office_exts:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                try:
+                    subprocess.run(
+                        [
+                            "libreoffice",
+                            "--headless",
+                            "--convert-to",
+                            "pdf",
+                            file_path,
+                            "--outdir",
+                            tmpdir,
+                        ],
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    pdf_name = os.path.splitext(os.path.basename(file_path))[0] + ".pdf"
+                    pdf_path = os.path.join(tmpdir, pdf_name)
+                    return send_file(pdf_path, mimetype="application/pdf")
+                except Exception:
+                    return "", 500
         mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
         return send_file(file_path, mimetype=mime)
     finally:
