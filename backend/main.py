@@ -101,12 +101,12 @@ LDAP_SEARCH_FILTER = os.getenv(
 ALLOWED_OUS = {"BAYLAN3", "BAYLAN4", "BAYLAN5"}
 
 ADMIN_USERS = {
-    u.strip() for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()
+    u.strip().lower() for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()
 }
 
 
 def is_admin(username: str) -> bool:
-    return username in ADMIN_USERS
+    return username.lower() in ADMIN_USERS
 
 GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
 GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID")
@@ -491,7 +491,7 @@ def read_login():
 
 @app.route("/login", methods=["POST"])
 def login():
-    username = request.form.get("username")
+    username = request.form.get("username", "").lower()
     password = request.form.get("password")
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{username}"
