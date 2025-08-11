@@ -524,6 +524,20 @@ def login():
         return jsonify(success=False, error=str(e))
 
 
+@app.route("/logout", methods=["POST"])
+def logout():
+    """Clear the user session and log the logout event."""
+    username = session.pop("username", None)
+    if username:
+        log_activity(
+            username,
+            f"{username} kullanıcısı sistemden çıktı",
+            "logout",
+        )
+    session.clear()
+    return jsonify(success=True)
+
+
 @app.route("/users/list", methods=["GET"])
 def list_users():
     query = request.args.get("q", "")

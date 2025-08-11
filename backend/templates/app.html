@@ -335,7 +335,8 @@ loadSelected();
 
 const displayName = localStorage.getItem('name') || username;
 document.getElementById('username-display').textContent = displayName;
-document.getElementById('logout-btn').addEventListener('click', () => {
+document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('/logout', { method: 'POST' });
     localStorage.removeItem('username');
     localStorage.removeItem('name');
     localStorage.removeItem('selectedFiles');
