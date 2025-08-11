@@ -9,4 +9,7 @@ pycryptodome
 jinja2
 msal
 requests
+python-docx
+openpyxl
+python-pptx
 

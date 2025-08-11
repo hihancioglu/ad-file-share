@@ -3,8 +3,6 @@ import secrets
 from datetime import datetime, timedelta
 import mimetypes
 import zipfile
-import tempfile
-import subprocess
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -1068,29 +1066,45 @@ def preview_file(token):
                 download_name=link.filename,
             )
         ext = os.path.splitext(file_path)[1].lower()
-        office_exts = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}
+        office_exts = {".docx", ".xlsx", ".pptx"}
         if ext in office_exts:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                try:
-                    subprocess.run(
-                        [
-                            "libreoffice",
-                            "--headless",
-                            "--convert-to",
-                            "pdf",
-                            file_path,
-                            "--outdir",
-                            tmpdir,
-                        ],
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
+            try:
+                if ext == ".docx":
+                    from docx import Document
+
+                    doc = Document(file_path)
+                    html = (
+                        "<html><body>"
+                        + "".join(f"<p>{p.text}</p>" for p in doc.paragraphs)
+                        + "</body></html>"
                     )
-                    pdf_name = os.path.splitext(os.path.basename(file_path))[0] + ".pdf"
-                    pdf_path = os.path.join(tmpdir, pdf_name)
-                    return send_file(pdf_path, mimetype="application/pdf")
-                except Exception:
-                    return "", 500
+                    return Response(html, mimetype="text/html")
+                if ext == ".xlsx":
+                    from openpyxl import load_workbook
+
+                    wb = load_workbook(file_path, data_only=True)
+                    sheet = wb.active
+                    html = "<html><body><table border='1'>"
+                    for row in sheet.iter_rows(values_only=True):
+                        html += "<tr>" + "".join(
+                            f"<td>{'' if cell is None else cell}</td>" for cell in row
+                        ) + "</tr>"
+                    html += "</table></body></html>"
+                    return Response(html, mimetype="text/html")
+                if ext == ".pptx":
+                    from pptx import Presentation
+
+                    prs = Presentation(file_path)
+                    parts = ["<html><body>"]
+                    for idx, slide in enumerate(prs.slides, start=1):
+                        parts.append(f"<h3>Slide {idx}</h3>")
+                        for shape in slide.shapes:
+                            if getattr(shape, "has_text_frame", False):
+                                parts.append(f"<p>{shape.text}</p>")
+                    parts.append("</body></html>")
+                    return Response("".join(parts), mimetype="text/html")
+            except Exception:
+                return "", 500
         mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
         return send_file(file_path, mimetype=mime)
     finally:
