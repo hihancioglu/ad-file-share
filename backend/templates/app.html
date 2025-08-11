@@ -956,7 +956,7 @@ async function loadPending() {
         fileTd.appendChild(nameSpan);
 
         const ext = item.filename.split('.').pop().toLowerCase();
-        const previewable = ['pdf', 'png', 'jpg', 'jpeg', 'xls', 'xlsx', 'doc', 'docx', 'ppt', 'pptx', 'csv'];
+        const previewable = ['pdf', 'png', 'jpg', 'jpeg', 'xlsx', 'docx', 'pptx', 'csv'];
         const archiveExts = ['zip', 'rar', 'tar', 'gz', 'tgz', 'tar.gz'];
         const imageExts = ['png', 'jpg', 'jpeg'];
         if (previewable.includes(ext) || archiveExts.includes(ext)) {
