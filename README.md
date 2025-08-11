@@ -39,3 +39,5 @@ used for the editor or internal callbacks, set:
   `http://localhost:8081`)
 - `ONLYOFFICE_INTERNAL_URL` – URL used by the Document Server to reach the
   backend (default: `http://backend:8000`)
+- `ONLYOFFICE_JWT_SECRET` – shared secret for signing OnlyOffice requests. The
+  same value must be provided to the Document Server via `JWT_SECRET`.

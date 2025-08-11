@@ -5,6 +5,7 @@ services:
     env_file: ./backend/.env
     environment:
       TZ: Europe/Istanbul
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-secret}
     volumes:
       - ./data:/app/data
     ports:
@@ -27,7 +28,8 @@ services:
   onlyoffice:
     image: onlyoffice/documentserver:latest
     environment:
-      - JWT_ENABLED=false
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-secret}
       - TZ=Europe/Istanbul
     ports:
       - "8081:80"
