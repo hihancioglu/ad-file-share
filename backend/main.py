@@ -17,6 +17,11 @@ mimetypes.add_type(
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".docx",
 )
+mimetypes.add_type("application/vnd.ms-powerpoint", ".ppt")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pptx",
+)
 mimetypes.add_type("text/csv", ".csv")
 
 import msal
