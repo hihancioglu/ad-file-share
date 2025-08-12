@@ -955,7 +955,7 @@ function renderFiles() {
                 linkIcon.classList.add('bi-hourglass-split');
             }
             linkBtn.addEventListener('click', async () => {
-                const url = window.location.origin + file.link;
+                const url = file.link;
                 try {
                     await navigator.clipboard.writeText(url);
                 } catch (e) {
@@ -1195,14 +1195,14 @@ async function loadPending() {
         approveBtn.className = 'btn btn-sm btn-success me-2';
         approveBtn.textContent = 'Onayla';
         approveBtn.addEventListener('click', async () => {
-            await fetch(`/share/approve/${item.token}`);
+            await fetch(`/share/approve/${item.approve_token}`);
             loadPending();
         });
         const rejectBtn = document.createElement('button');
         rejectBtn.className = 'btn btn-sm btn-danger';
         rejectBtn.textContent = 'Reddet';
         rejectBtn.addEventListener('click', async () => {
-            await fetch(`/share/reject/${item.token}`);
+            await fetch(`/share/reject/${item.reject_token}`);
             loadPending();
         });
         actTd.appendChild(approveBtn);

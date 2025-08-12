@@ -8,6 +8,8 @@ class ShareLink(Base):
     __tablename__ = "share_links"
 
     token = Column(String, primary_key=True, index=True)
+    approve_token = Column(String, unique=True, index=True, nullable=True)
+    reject_token = Column(String, unique=True, index=True, nullable=True)
     username = Column(String, index=True)
     filename = Column(String)
     expires_at = Column(DateTime)
