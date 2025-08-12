@@ -38,10 +38,16 @@
         border: 1px solid #dee2e6;
     }
     .table tbody tr:nth-child(odd) {
-        background-color: #fff;
+        background-color: #fff !important;
     }
     .table tbody tr:nth-child(even) {
-        background-color: #e9ecef;
+        background-color: #f2f2f2 !important;
+    }
+    .table th:first-child,
+    .table td:first-child {
+        width: 1%;
+        white-space: nowrap;
+        text-align: center;
     }
     </style>
 </head>
@@ -472,6 +478,25 @@ sortableHeaders.forEach(th => {
 updateSortIcons();
 ['file-table', 'incoming-table', 'outgoing-table', 'pending-table'].forEach(makeColumnsResizable);
 
+function autoFitColumn(table, index) {
+    const th = table.querySelectorAll('th')[index];
+    const cells = [th, ...table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)];
+    let max = 0;
+    cells.forEach(cell => {
+        const prev = cell.style.whiteSpace;
+        cell.style.whiteSpace = 'nowrap';
+        const width = cell.scrollWidth;
+        cell.style.whiteSpace = prev;
+        if (width > max) {
+            max = width;
+        }
+    });
+    cells.forEach(cell => {
+        cell.style.whiteSpace = 'nowrap';
+        cell.style.width = (max + 16) + 'px';
+    });
+}
+
 function makeColumnsResizable(tableId) {
     const table = document.getElementById(tableId);
     if (!table) return;
@@ -481,6 +506,11 @@ function makeColumnsResizable(tableId) {
         th.appendChild(resizer);
         resizer.addEventListener('mousedown', initResize);
         resizer.addEventListener('click', e => e.stopPropagation());
+        const index = Array.from(th.parentElement.children).indexOf(th);
+        resizer.addEventListener('dblclick', e => {
+            e.stopPropagation();
+            autoFitColumn(table, index);
+        });
 
         let startX;
         let startWidth;
@@ -910,6 +940,7 @@ function renderFiles() {
 
     renderPagination(totalPages);
     updateActionButtons();
+    autoFitColumn(document.getElementById('file-table'), 0);
 }
 
 async function loadFiles() {
