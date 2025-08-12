@@ -1346,7 +1346,14 @@ editBtn.addEventListener('click', () => {
     const filename = Array.from(selected)[0];
     const file = currentFiles.find(f => f.title === filename);
     editFileName = filename;
-    document.getElementById('edit-share-expiry').value = file.public_expires_at || '';
+    const shareInput = document.getElementById('edit-share-expiry');
+    if (file.link) {
+        shareInput.disabled = false;
+        shareInput.value = file.public_expires_at ? toISO(file.public_expires_at) : '';
+    } else {
+        shareInput.disabled = true;
+        shareInput.value = '';
+    }
     document.getElementById('edit-description').value = file.description || '';
     const modal = new bootstrap.Modal(document.getElementById('editModal'));
     modal.show();
@@ -1356,7 +1363,10 @@ document.getElementById('edit-save').addEventListener('click', async () => {
     const fd = new FormData();
     fd.append('username', username);
     fd.append('filename', editFileName);
-    fd.append('share_expires_at', document.getElementById('edit-share-expiry').value);
+    const shareInput = document.getElementById('edit-share-expiry');
+    if (!shareInput.disabled) {
+        fd.append('share_expires_at', shareInput.value);
+    }
     fd.append('description', document.getElementById('edit-description').value);
     await fetch('/file/update', { method: 'POST', body: fd });
     const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
@@ -1461,6 +1471,14 @@ function formatSize(bytes) {
         unit++;
     }
     return size.toFixed(1) + ' ' + units[unit];
+}
+
+function toISO(dateStr) {
+    if (!dateStr) return '';
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) return '';
+    const [day, month, year] = parts;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
 async function loadDashboard() {

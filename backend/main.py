@@ -820,13 +820,13 @@ def list_files():
                 {
                     "title": filename,
                     "added": datetime.fromtimestamp(stat.st_mtime).strftime(
-                        "%Y-%m-%d %H:%M:%S"
+                        "%d/%m/%Y %H:%M:%S"
                     ),
                     "extension": os.path.splitext(filename)[1].lstrip("."),
                     "description": desc,
                     "size": stat.st_size,
-                    "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
-                    "public_expires_at": link_exp.strftime("%Y-%m-%d")
+                    "expires_at": exp.strftime("%d/%m/%Y") if exp else "",
+                    "public_expires_at": link_exp.strftime("%d/%m/%Y")
                     if link_exp
                     else "",
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
@@ -891,13 +891,13 @@ def list_files():
                     "title": filename,
                     "username": user,
                     "added": datetime.fromtimestamp(stat.st_mtime).strftime(
-                        "%Y-%m-%d %H:%M:%S"
+                        "%d/%m/%Y %H:%M:%S"
                     ),
                     "extension": os.path.splitext(filename)[1].lstrip("."),
                     "description": desc,
                     "size": stat.st_size,
-                    "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
-                    "public_expires_at": link_exp.strftime("%Y-%m-%d")
+                    "expires_at": exp.strftime("%d/%m/%Y") if exp else "",
+                    "public_expires_at": link_exp.strftime("%d/%m/%Y")
                     if link_exp
                     else "",
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
@@ -940,7 +940,7 @@ def download_logs():
             ts = log.timestamp + timedelta(hours=3)
             data.append(
                 {
-                    "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": ts.strftime("%d/%m/%Y %H:%M:%S"),
                     "ip_address": log.ip_address,
                     "country": log.country,
                 }
@@ -1206,7 +1206,7 @@ def pending_shares():
                         "reject_token": link.reject_token,
                         "username": link.username,
                         "filename": link.filename,
-                        "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
+                        "expires_at": link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
                     }
                 )
             else:
@@ -1219,7 +1219,7 @@ def pending_shares():
                             "reject_token": link.reject_token,
                             "username": link.username,
                             "filename": link.filename,
-                            "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
+                            "expires_at": link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
                         }
                     )
         return jsonify(shares=shares)
@@ -1355,7 +1355,7 @@ def incoming_files():
                 {
                     "filename": s.filename,
                     "sender": get_full_name(s.sender),
-                    "expires_at": s.expires_at.strftime("%Y-%m-%d")
+                    "expires_at": s.expires_at.strftime("%d/%m/%Y")
                     if s.expires_at
                     else "",
                 }
@@ -1382,7 +1382,7 @@ def outgoing_files():
                     "target": get_full_name(s.recipient),
                     "target_id": s.recipient,
                     "type": "user",
-                    "expires_at": s.expires_at.strftime("%Y-%m-%d")
+                    "expires_at": s.expires_at.strftime("%d/%m/%Y")
                     if s.expires_at
                     else "",
                 }
@@ -1400,7 +1400,7 @@ def outgoing_files():
                     "target": team_names.get(t.team_id, ""),
                     "target_id": t.team_id,
                     "type": "team",
-                    "expires_at": t.expires_at.strftime("%Y-%m-%d")
+                    "expires_at": t.expires_at.strftime("%d/%m/%Y")
                     if t.expires_at
                     else "",
                 }
@@ -1486,7 +1486,7 @@ def public_page(token):
         filename=filename,
         uploader=uploader,
         size=size,
-        expires_at=link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
+        expires_at=link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
     )
 
 
@@ -1609,11 +1609,28 @@ def dashboard_data():
         now = datetime.utcnow()
         upcoming = now + timedelta(days=7)
         user_files = db.query(UserFile).filter_by(username=username).all()
-        expiring = []
+        user_links = db.query(ShareLink).filter_by(username=username).all()
+        expiring_map = {}
         for f in user_files:
             if f.expires_at and now < f.expires_at <= upcoming:
                 days_left = (f.expires_at - now).days
-                expiring.append({"filename": f.filename, "days_left": days_left})
+                expiring_map[f.filename] = min(
+                    expiring_map.get(f.filename, days_left), days_left
+                )
+        for l in user_links:
+            if (
+                l.expires_at
+                and now < l.expires_at <= upcoming
+                and l.approved
+                and not l.rejected
+            ):
+                days_left = (l.expires_at - now).days
+                expiring_map[l.filename] = min(
+                    expiring_map.get(l.filename, days_left), days_left
+                )
+        expiring = [
+            {"filename": fn, "days_left": dl} for fn, dl in expiring_map.items()
+        ]
         expiring.sort(key=lambda x: x["days_left"])
     finally:
         db.close()
@@ -2046,7 +2063,7 @@ def notifications():
             {
                 "id": n.id,
                 "message": n.message,
-                "created_at": n.created_at.strftime("%Y-%m-%d %H:%M"),
+                "created_at": n.created_at.strftime("%d/%m/%Y %H:%M"),
                 "read": n.read,
                 "team_id": n.team_id,
             }
@@ -2113,7 +2130,7 @@ def activities():
                     "username": a.username,
                     "message": msg,
                     "category": a.category,
-                    "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+                    "created_at": a.created_at.strftime("%d/%m/%Y %H:%M"),
                 }
             )
         return jsonify(activities=data)
