@@ -26,6 +26,7 @@ mimetypes.add_type("text/csv", ".csv")
 
 import msal
 import requests
+from functools import lru_cache
 
 from flask import (
     Flask,
@@ -401,16 +402,40 @@ def delete_share_notification(username: str, filename: str):
         db.close()
 
 
+@lru_cache(maxsize=1024)
 def get_country_from_ip(ip_address: str) -> str:
+    """Return the country name for a given IP address.
+
+    The primary lookup uses ipapi.co. If that fails to return a country
+    (due to network errors, rate limits, etc.), a secondary lookup is
+    attempted using ipwho.is. Results are cached to reduce repeated
+    lookups for the same IP address.
+    """
+
+    # Try ipapi.co first
     try:
         resp = requests.get(
             f"https://ipapi.co/{ip_address}/json/", timeout=5
         )
         if resp.ok:
             data = resp.json()
-            return data.get("country_name", "")
+            country = data.get("country_name")
+            if country:
+                return country
     except Exception:
         pass
+
+    # Fallback to ipwho.is
+    try:
+        resp = requests.get(f"https://ipwho.is/{ip_address}", timeout=5)
+        if resp.ok:
+            data = resp.json()
+            country = data.get("country")
+            if country:
+                return country
+    except Exception:
+        pass
+
     return ""
 
 
