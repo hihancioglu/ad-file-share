@@ -97,6 +97,19 @@ def format_file_size(num_bytes: int) -> str:
         size /= 1000
 
 
+def format_remaining(td: timedelta) -> str:
+    total = int(td.total_seconds())
+    if total <= 0:
+        return "0 saat"
+    days, rem = divmod(total, 86400)
+    hours = rem // 3600
+    if days >= 7:
+        return f"{days} gün"
+    if days > 0:
+        return f"{days} gün {hours} saat"
+    return f"{hours} saat"
+
+
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 LDAP_USER = os.getenv("LDAP_USER")
@@ -829,6 +842,10 @@ def list_files():
                     "public_expires_at": link_exp.strftime("%d/%m/%Y")
                     if link_exp
                     else "",
+                    "expires_in": format_remaining(exp - now) if exp else "",
+                    "public_expires_in": format_remaining(link_exp - now)
+                    if link_exp
+                    else "",
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
@@ -901,6 +918,10 @@ def list_files():
                     "size": stat.st_size,
                     "expires_at": exp.strftime("%d/%m/%Y") if exp else "",
                     "public_expires_at": link_exp.strftime("%d/%m/%Y")
+                    if link_exp
+                    else "",
+                    "expires_in": format_remaining(exp - now) if exp else "",
+                    "public_expires_in": format_remaining(link_exp - now)
                     if link_exp
                     else "",
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
@@ -991,19 +1012,24 @@ def delete_file():
 def list_trash():
     cleanup_expired_files()
     username = request.form.get("username")
+    admin_mode = request.form.get("admin") and is_admin(username)
     db = SessionLocal()
     try:
-        metas = (
-            db.query(UserFile)
-            .filter_by(username=username)
-            .filter(UserFile.deleted_at != None)
-            .all()
-        )
+        query = db.query(UserFile).filter(UserFile.deleted_at != None)
+        if not admin_mode:
+            query = query.filter_by(username=username)
+        metas = query.all()
         now = datetime.utcnow()
         files = []
         for meta in metas:
-            remaining = (meta.deleted_at + timedelta(days=15) - now).days
-            files.append({"filename": meta.filename, "days_left": remaining})
+            remaining = meta.deleted_at + timedelta(days=15) - now
+            entry = {
+                "filename": meta.filename,
+                "time_left": format_remaining(remaining),
+            }
+            if admin_mode:
+                entry["username"] = meta.username
+            files.append(entry)
         return jsonify(files=files)
     finally:
         db.close()
@@ -1616,9 +1642,9 @@ def dashboard_data():
         expiring_map = {}
         for f in user_files:
             if f.expires_at and now < f.expires_at <= upcoming:
-                days_left = (f.expires_at - now).days
+                delta = f.expires_at - now
                 expiring_map[f.filename] = min(
-                    expiring_map.get(f.filename, days_left), days_left
+                    expiring_map.get(f.filename, delta), delta
                 )
         for l in user_links:
             if (
@@ -1627,14 +1653,15 @@ def dashboard_data():
                 and l.approved
                 and not l.rejected
             ):
-                days_left = (l.expires_at - now).days
+                delta = l.expires_at - now
                 expiring_map[l.filename] = min(
-                    expiring_map.get(l.filename, days_left), days_left
+                    expiring_map.get(l.filename, delta), delta
                 )
+        expiring = [(fn, td) for fn, td in expiring_map.items()]
+        expiring.sort(key=lambda x: x[1])
         expiring = [
-            {"filename": fn, "days_left": dl} for fn, dl in expiring_map.items()
+            {"filename": fn, "time_left": format_remaining(td)} for fn, td in expiring
         ]
-        expiring.sort(key=lambda x: x["days_left"])
     finally:
         db.close()
 

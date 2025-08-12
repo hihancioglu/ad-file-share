@@ -151,7 +151,7 @@
               <div class="col-md-4 mb-4">
                 <h3>Süresi Yaklaşan Dosyalar</h3>
                 <table class="table text-start" id="expiring-table">
-                  <thead><tr><th>Dosya</th><th>Kalan Gün</th></tr></thead>
+                  <thead><tr><th>Dosya</th><th>Kalan Süre</th></tr></thead>
                   <tbody></tbody>
                 </table>
               </div>
@@ -193,7 +193,7 @@
                         <th></th>
                         <th data-field="title">Başlık</th>
                         <th data-field="added">Eklenme Tarihi</th>
-                        <th data-field="expires_at">Geçerlilik</th>
+                        <th data-field="expires_at">Geçerlilik Süresi</th>
                         <th data-field="extension">Uzantı</th>
                         <th data-field="description">Açıklama</th>
                         <th data-field="size">Boyut</th>
@@ -239,9 +239,10 @@
             <h2>Çöp Kutusu</h2>
             <table id="trash-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
-                    <tr>
+                    <tr id="trash-header-row">
+                        <th id="trash-user-col" class="d-none">Kullanıcı</th>
                         <th>Dosya</th>
-                        <th>Kalan Gün</th>
+                        <th>Kalan Süre</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -925,6 +926,8 @@ function renderFiles() {
             f.added,
             f.expires_at,
             f.public_expires_at,
+            f.expires_in,
+            f.public_expires_in,
             f.extension,
             f.description,
             f.size,
@@ -1040,7 +1043,7 @@ function renderFiles() {
         tr.appendChild(addedTd);
 
         const expTd = document.createElement('td');
-        expTd.textContent = file.public_expires_at || file.expires_at;
+        expTd.textContent = file.public_expires_in || file.expires_in || '';
         tr.appendChild(expTd);
 
         const extTd = document.createElement('td');
@@ -1184,17 +1187,26 @@ async function loadOutgoing() {
 async function loadTrash() {
     const fd = new FormData();
     fd.append('username', username);
+    if (adminMode) {
+        fd.append('admin', '1');
+    }
     const res = await fetch('/trash/list', { method: 'POST', body: fd });
     const json = await res.json();
     const tbody = document.querySelector('#trash-table tbody');
     tbody.innerHTML = '';
+    document.getElementById('trash-user-col').classList.toggle('d-none', !adminMode);
     json.files.forEach(file => {
         const tr = document.createElement('tr');
+        if (adminMode) {
+            const userTd = document.createElement('td');
+            userTd.textContent = file.username;
+            tr.appendChild(userTd);
+        }
         const nameTd = document.createElement('td');
         nameTd.textContent = file.filename;
         tr.appendChild(nameTd);
         const daysTd = document.createElement('td');
-        daysTd.textContent = file.days_left;
+        daysTd.textContent = file.time_left;
         tr.appendChild(daysTd);
         const actTd = document.createElement('td');
         const btn = document.createElement('button');
@@ -1202,7 +1214,7 @@ async function loadTrash() {
         btn.textContent = 'Geri Al';
         btn.addEventListener('click', async () => {
             const data = new FormData();
-            data.append('username', username);
+            data.append('username', adminMode ? file.username : username);
             data.append('filename', file.filename);
             await fetch('/trash/restore', { method: 'POST', body: data });
             loadTrash();
@@ -1542,7 +1554,7 @@ async function loadDashboard() {
     tbody.innerHTML = '';
     json.expiring_files.forEach(f => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.filename}</td><td>${f.days_left}</td>`;
+        tr.innerHTML = `<td>${f.filename}</td><td>${f.time_left}</td>`;
         tbody.appendChild(tr);
     });
 }
