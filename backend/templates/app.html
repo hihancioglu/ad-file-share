@@ -120,26 +120,28 @@
 
           <section id="dashboard" class="mb-4">
             <h2>Dashboard</h2>
-            <div class="mb-4">
-              <h3>Disk Kullanımı</h3>
-              <canvas id="disk-chart" width="400" height="400"></canvas>
-              <div class="text-center mt-2"><strong>Toplam: <span id="disk-total"></span></strong></div>
-            </div>
-            <div class="mb-4">
-              <h3>İndirmeler</h3>
-              <p>En çok indirilen dosya: <span id="top-file"></span></p>
-              <p>En çok indirilen ülke: <span id="top-country"></span></p>
-            </div>
-            <div class="mb-4">
-              <h3>Ekipler</h3>
-              <ul id="dashboard-teams" class="list-group"></ul>
-            </div>
-            <div class="mb-4">
-              <h3>Süresi Yaklaşan Dosyalar</h3>
-              <table class="table" id="expiring-table">
-                <thead><tr><th>Dosya</th><th>Kalan Gün</th></tr></thead>
-                <tbody></tbody>
-              </table>
+            <div class="row">
+              <div class="col-md-4 mb-4 text-center">
+                <h3>Disk Kullanımı</h3>
+                <canvas id="disk-chart" style="max-width:200px; max-height:200px; margin:0 auto; display:block;"></canvas>
+                <div class="text-center mt-2"><strong>Toplam: <span id="disk-total"></span></strong></div>
+              </div>
+              <div class="col-md-4 mb-4">
+                <h3>İndirmeler</h3>
+                <p>En çok indirilen dosya: <span id="top-file"></span></p>
+                <p>En çok indirilen ülke: <span id="top-country"></span></p>
+              </div>
+              <div class="col-md-4 mb-4">
+                <h3>Ekipler</h3>
+                <ul id="dashboard-teams" class="list-group"></ul>
+              </div>
+              <div class="col-md-4 mb-4">
+                <h3>Süresi Yaklaşan Dosyalar</h3>
+                <table class="table" id="expiring-table">
+                  <thead><tr><th>Dosya</th><th>Kalan Gün</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
             </div>
           </section>
 
