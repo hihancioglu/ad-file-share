@@ -58,6 +58,8 @@ from sqlalchemy import func
 load_dotenv()
 add_missing_columns()
 
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://sendv2.baylan.info.tr").rstrip("/")
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
 CORS(app, supports_credentials=True)
@@ -289,7 +291,9 @@ def require_manager_auth(link):
     return None
 
 
-def send_approval_email(username: str, filename: str, token: str):
+def send_approval_email(
+    username: str, filename: str, approve_token: str, reject_token: str
+):
     _, manager_email = get_manager_info(username)
     if not (
         manager_email
@@ -299,8 +303,8 @@ def send_approval_email(username: str, filename: str, token: str):
         and GRAPH_SENDER
     ):
         return
-    approval_link = f"{request.host_url}share/approve/{token}"
-    reject_link = f"{request.host_url}share/reject/{token}"
+    approval_link = f"{PUBLIC_BASE_URL}/share/approve/{approve_token}"
+    reject_link = f"{PUBLIC_BASE_URL}/share/reject/{reject_token}"
     subject = "Dosya Paylaşımı Onayı"
     full_name = get_full_name(username)
     body = (
@@ -362,12 +366,16 @@ def create_share_link(
     filename: str,
     expires_at=None,
     approved: bool = False,
+    approve_token: str | None = None,
+    reject_token: str | None = None,
 ):
     db = SessionLocal()
     try:
         db.add(
             ShareLink(
                 token=token,
+                approve_token=approve_token,
+                reject_token=reject_token,
                 username=username,
                 filename=filename,
                 expires_at=expires_at,
@@ -818,7 +826,7 @@ def list_files():
                     "public_expires_at": link_exp.strftime("%Y-%m-%d")
                     if link_exp
                     else "",
-                    "link": f"/public/{token}" if token and not rejected else "",
+                    "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
                     "download_count": counts.get(filename, 0),
@@ -887,7 +895,7 @@ def list_files():
                     "public_expires_at": link_exp.strftime("%Y-%m-%d")
                     if link_exp
                     else "",
-                    "link": f"/public/{token}" if token and not rejected else "",
+                    "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
                     "download_count": counts.get((user, filename), 0),
@@ -990,8 +998,19 @@ def share_file():
             if not expires_at or expires_at > file_exp:
                 expires_at = file_exp
         auto_approve = is_department_manager(username)
+        approve_token = None
+        reject_token = None
+        if not auto_approve:
+            approve_token = secrets.token_urlsafe(16)
+            reject_token = secrets.token_urlsafe(16)
         create_share_link(
-            token, username, filename, expires_at, approved=auto_approve
+            token,
+            username,
+            filename,
+            expires_at,
+            approved=auto_approve,
+            approve_token=approve_token,
+            reject_token=reject_token,
         )
         log_activity(
             username,
@@ -1004,14 +1023,14 @@ def share_file():
                 f"'{filename}' paylaşımı onaylandı",
             )
         else:
-            send_approval_email(username, filename, token)
+            send_approval_email(username, filename, approve_token, reject_token)
             mgr_user, _ = get_manager_info(username)
             if mgr_user:
                 create_notification(
                     mgr_user,
                     f"'{filename}' dosyası için onay bekleyen paylaşım",
                 )
-    return jsonify(success=True, link=f"/public/{token}")
+    return jsonify(success=True, link=f"{PUBLIC_BASE_URL}/public/{token}")
 
 
 @app.route("/share/delete", methods=["POST"])
@@ -1032,14 +1051,13 @@ def delete_share():
 def approve_share(token):
     db = SessionLocal()
     try:
-        link = db.query(ShareLink).filter_by(token=token).first()
-        if not link:
+        link = db.query(ShareLink).filter_by(approve_token=token).first()
+        if not link or link.approved or link.rejected:
             return render_template("message.html", message="Geçersiz bağlantı")
-        auth_resp = require_manager_auth(link)
-        if auth_resp:
-            return auth_resp
         link.approved = True
         link.rejected = False
+        link.approve_token = None
+        link.reject_token = None
         db.commit()
         create_notification(
             link.username,
@@ -1054,14 +1072,13 @@ def approve_share(token):
 def reject_share(token):
     db = SessionLocal()
     try:
-        link = db.query(ShareLink).filter_by(token=token).first()
-        if not link:
+        link = db.query(ShareLink).filter_by(reject_token=token).first()
+        if not link or link.approved or link.rejected:
             return render_template("message.html", message="Geçersiz bağlantı")
-        auth_resp = require_manager_auth(link)
-        if auth_resp:
-            return auth_resp
         link.rejected = True
         link.approved = False
+        link.approve_token = None
+        link.reject_token = None
         db.commit()
         create_notification(
             link.username,
@@ -1085,6 +1102,8 @@ def pending_shares():
                 shares.append(
                     {
                         "token": link.token,
+                        "approve_token": link.approve_token,
+                        "reject_token": link.reject_token,
                         "username": link.username,
                         "filename": link.filename,
                         "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
@@ -1096,6 +1115,8 @@ def pending_shares():
                     shares.append(
                         {
                             "token": link.token,
+                            "approve_token": link.approve_token,
+                            "reject_token": link.reject_token,
                             "username": link.username,
                             "filename": link.filename,
                             "expires_at": link.expires_at.strftime("%Y-%m-%d") if link.expires_at else "",
