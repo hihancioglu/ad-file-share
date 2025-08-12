@@ -434,7 +434,7 @@ def log_download(username: str, filename: str, downloader: str | None = None):
         )
 
 
-def set_file_expiry(username: str, filename: str, expires_dt):
+def set_file_expiry(username: str, filename: str, expires_dt, description: str = ""):
     db = SessionLocal()
     try:
         meta = (
@@ -444,10 +444,14 @@ def set_file_expiry(username: str, filename: str, expires_dt):
         )
         if meta:
             meta.expires_at = expires_dt
+            meta.description = description
         else:
             db.add(
                 UserFile(
-                    username=username, filename=filename, expires_at=expires_dt
+                    username=username,
+                    filename=filename,
+                    expires_at=expires_dt,
+                    description=description,
                 )
             )
         db.commit()
@@ -659,6 +663,7 @@ def upload_file():
     chunk = request.files.get("file")
     chunk_index = request.form.get("chunk_index")
     total_chunks = request.form.get("total_chunks")
+    description = request.form.get("description", "")
 
     if filename and chunk and chunk_index is not None and total_chunks:
         chunk_index = int(chunk_index)
@@ -675,7 +680,7 @@ def upload_file():
         # If this was the last chunk, respond with completion info
         if chunk_index + 1 == total_chunks:
             current_uploads.pop(key, None)
-            set_file_expiry(username, final_name, expires_dt)
+            set_file_expiry(username, final_name, expires_dt, description)
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
@@ -697,7 +702,7 @@ def upload_file():
             file_path = os.path.join(user_dir, final_name)
             file.save(file_path)
             uploaded.append(final_name)
-            set_file_expiry(username, final_name, expires_dt)
+            set_file_expiry(username, final_name, expires_dt, description)
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
@@ -720,7 +725,7 @@ def list_files():
         db = SessionLocal()
         try:
             metas = {
-                m.filename: m.expires_at
+                m.filename: (m.expires_at, m.description or "")
                 for m in db.query(UserFile).filter_by(username=username).all()
             }
             now = datetime.utcnow()
@@ -751,7 +756,7 @@ def list_files():
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
-            exp = metas.get(filename)
+            exp, desc = metas.get(filename, (None, ""))
             link_info = links.get(filename, {})
             token = link_info.get("token")
             link_exp = link_info.get("expires_at")
@@ -764,7 +769,7 @@ def list_files():
                         "%Y-%m-%d %H:%M:%S"
                     ),
                     "extension": os.path.splitext(filename)[1].lstrip("."),
-                    "description": "",
+                    "description": desc,
                     "size": stat.st_size,
                     "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
                     "public_expires_at": link_exp.strftime("%Y-%m-%d")
@@ -782,7 +787,7 @@ def list_files():
     db = SessionLocal()
     try:
         metas = {
-            (m.username, m.filename): m.expires_at
+            (m.username, m.filename): (m.expires_at, m.description or "")
             for m in db.query(UserFile).all()
         }
         now = datetime.utcnow()
@@ -819,7 +824,7 @@ def list_files():
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
-            exp = metas.get((user, filename))
+            exp, desc = metas.get((user, filename), (None, ""))
             link_info = links.get((user, filename), {})
             token = link_info.get("token")
             link_exp = link_info.get("expires_at")
@@ -833,7 +838,7 @@ def list_files():
                         "%Y-%m-%d %H:%M:%S"
                     ),
                     "extension": os.path.splitext(filename)[1].lstrip("."),
-                    "description": "",
+                    "description": desc,
                     "size": stat.st_size,
                     "expires_at": exp.strftime("%Y-%m-%d") if exp else "",
                     "public_expires_at": link_exp.strftime("%Y-%m-%d")
