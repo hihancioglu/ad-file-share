@@ -483,10 +483,13 @@ function autoFitColumn(table, index) {
     const cells = [th, ...table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)];
     let max = 0;
     cells.forEach(cell => {
-        const prev = cell.style.whiteSpace;
+        const prevWhiteSpace = cell.style.whiteSpace;
+        const prevWidth = cell.style.width;
         cell.style.whiteSpace = 'nowrap';
+        cell.style.width = 'auto';
         const width = cell.scrollWidth;
-        cell.style.whiteSpace = prev;
+        cell.style.whiteSpace = prevWhiteSpace;
+        cell.style.width = prevWidth;
         if (width > max) {
             max = width;
         }
