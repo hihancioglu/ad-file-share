@@ -1440,6 +1440,8 @@ def dashboard_data():
                 size = os.path.getsize(path)
                 files.append({"name": name, "size": size})
                 total_size += size
+    files.sort(key=lambda f: f["size"], reverse=True)
+    top_disk_files = files[:5]
     db = SessionLocal()
     try:
         logs = db.query(DownloadLog).filter_by(username=username).all()
@@ -1449,14 +1451,12 @@ def dashboard_data():
             counts_by_file[l.filename] = counts_by_file.get(l.filename, 0) + 1
             if l.country:
                 counts_by_country[l.country] = counts_by_country.get(l.country, 0) + 1
-        top_file = (
-            max(counts_by_file, key=counts_by_file.get) if counts_by_file else None
-        )
-        top_country = (
-            max(counts_by_country, key=counts_by_country.get)
-            if counts_by_country
-            else None
-        )
+        top_files = sorted(
+            counts_by_file.items(), key=lambda x: x[1], reverse=True
+        )[:5]
+        top_countries = sorted(
+            counts_by_country.items(), key=lambda x: x[1], reverse=True
+        )[:5]
 
         memberships = (
             db.query(TeamMember)
@@ -1493,12 +1493,16 @@ def dashboard_data():
             if f.expires_at and now < f.expires_at <= upcoming:
                 days_left = (f.expires_at - now).days
                 expiring.append({"filename": f.filename, "days_left": days_left})
+        expiring.sort(key=lambda x: x["days_left"])
     finally:
         db.close()
 
     return jsonify(
-        disk_usage={"total": total_size, "files": files},
-        downloads={"top_file": top_file, "top_country": top_country},
+        disk_usage={"total": total_size, "files": top_disk_files},
+        downloads={
+            "files": [{"filename": f, "count": c} for f, c in top_files],
+            "countries": [{"country": c, "count": n} for c, n in top_countries],
+        },
         teams=teams,
         expiring_files=expiring,
     )
