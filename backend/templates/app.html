@@ -1560,8 +1560,13 @@ async function uploadFile(file, expiry, description) {
         formData.append('file', chunk);
         formData.append('description', description);
         const res = await fetch('/upload', { method: 'POST', body: formData });
+        const contentType = res.headers.get('Content-Type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await res.text();
+            throw new Error(text || 'Yükleme başarısız');
+        }
         const json = await res.json();
-        if (!json.success) {
+        if (!res.ok || !json.success) {
             throw new Error(json.error || 'Yükleme başarısız');
         }
         if (json.filenames && json.filenames.length > 0) {
