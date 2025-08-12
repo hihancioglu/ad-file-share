@@ -10,12 +10,11 @@
     .resizer {
         position: absolute;
         top: 0;
-        right: 0;
+        right: -2px;
         width: 5px;
         height: 100%;
         cursor: col-resize;
         user-select: none;
-        background-color: #e9ecef;
     }
     .sort-icon {
         cursor: pointer;
@@ -42,7 +41,7 @@
         background-color: #fff;
     }
     .table tbody tr:nth-child(even) {
-        background-color: #f8f9fa;
+        background-color: #e9ecef;
     }
     </style>
 </head>
@@ -471,7 +470,6 @@ sortableHeaders.forEach(th => {
     });
 });
 updateSortIcons();
-
 ['file-table', 'incoming-table', 'outgoing-table', 'pending-table'].forEach(makeColumnsResizable);
 
 function makeColumnsResizable(tableId) {
@@ -506,7 +504,6 @@ function makeColumnsResizable(tableId) {
         }
     });
 }
-
 
 async function loadNotifications() {
     const fd = new FormData();
