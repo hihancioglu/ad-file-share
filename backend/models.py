@@ -96,6 +96,7 @@ class UserFile(Base):
     filename = Column(String)
     expires_at = Column(DateTime)
     description = Column(String, default="")
+    deleted_at = Column(DateTime)
 
 
 Base.metadata.create_all(engine)

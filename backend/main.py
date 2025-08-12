@@ -1,4 +1,5 @@
 import os
+import shutil
 import secrets
 from datetime import datetime, timedelta
 import mimetypes
@@ -502,15 +503,14 @@ def cleanup_expired_files():
     try:
         expired = (
             db.query(UserFile)
-            .filter(UserFile.expires_at != None)
-            .filter(UserFile.expires_at < now)
+            .filter(UserFile.deleted_at != None)
+            .filter(UserFile.deleted_at < now - timedelta(days=15))
             .all()
         )
         for meta in expired:
-            user_dir = os.path.join(DATA_DIR, meta.username)
-            file_path = os.path.join(user_dir, meta.filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            trash_path = os.path.join(DATA_DIR, "_trash", meta.username, meta.filename)
+            if os.path.exists(trash_path):
+                os.remove(trash_path)
             db.query(ShareLink).filter_by(
                 username=meta.username, filename=meta.filename
             ).delete()
@@ -777,7 +777,10 @@ def list_files():
         try:
             metas = {
                 m.filename: (m.expires_at, m.description or "")
-                for m in db.query(UserFile).filter_by(username=username).all()
+                for m in db.query(UserFile)
+                .filter_by(username=username)
+                .filter(UserFile.deleted_at == None)
+                .all()
             }
             now = datetime.utcnow()
             links = {
@@ -839,7 +842,9 @@ def list_files():
     try:
         metas = {
             (m.username, m.filename): (m.expires_at, m.description or "")
-            for m in db.query(UserFile).all()
+            for m in db.query(UserFile)
+            .filter(UserFile.deleted_at == None)
+            .all()
         }
         now = datetime.utcnow()
         links = {
@@ -953,10 +958,21 @@ def delete_file():
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
-    os.remove(file_path)
+    trash_dir = os.path.join(DATA_DIR, "_trash", username)
+    os.makedirs(trash_dir, exist_ok=True)
+    shutil.move(file_path, os.path.join(trash_dir, filename))
     db = SessionLocal()
     try:
-        db.query(UserFile).filter_by(username=username, filename=filename).delete()
+        meta = (
+            db.query(UserFile)
+            .filter_by(username=username, filename=filename)
+            .first()
+        )
+        now = datetime.utcnow()
+        if meta:
+            meta.deleted_at = now
+        else:
+            db.add(UserFile(username=username, filename=filename, deleted_at=now))
         db.commit()
     finally:
         db.close()
@@ -965,6 +981,40 @@ def delete_file():
     log_activity(
         username, f"{username} kullanıcısı '{filename}' dosyasını sildi", "delete"
     )
+    return jsonify(success=True)
+
+
+@app.route("/file/update", methods=["POST"])
+def update_file():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    description = request.form.get("description", "")
+    share_exp = request.form.get("share_expires_at")
+    db = SessionLocal()
+    try:
+        meta = (
+            db.query(UserFile)
+            .filter_by(username=username, filename=filename)
+            .first()
+        )
+        if meta:
+            meta.description = description
+        else:
+            db.add(UserFile(username=username, filename=filename, description=description))
+        if share_exp is not None:
+            link = (
+                db.query(ShareLink)
+                .filter_by(username=username, filename=filename)
+                .first()
+            )
+            expires_dt = (
+                datetime.strptime(share_exp, "%Y-%m-%d") if share_exp else None
+            )
+            if link:
+                link.expires_at = expires_dt
+        db.commit()
+    finally:
+        db.close()
     return jsonify(success=True)
 
 

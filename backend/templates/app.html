@@ -165,15 +165,7 @@
             </div>
             <h5 id="pending-title" class="d-none">Yüklenecek Dosyalar</h5>
             <ul id="file-list" class="list-group mb-2"></ul>
-            <div class="d-flex mb-2 align-items-center">
-                <label for="file-expiry" class="me-2">Geçerlilik Tarihi</label>
-                <select id="file-expiry" class="form-select me-2">
-                    <option value="1">1 gün</option>
-                    <option value="7">7 gün</option>
-                    <option value="30" selected>30 gün</option>
-                    <option value="60">60 gün</option>
-                    <option value="0">Süresiz</option>
-                </select>
+            <div class="mb-2">
                 <button id="upload-btn" class="btn btn-primary d-none">Yükle</button>
             </div>
             <div id="upload-result" class="mt-2"></div>
@@ -183,6 +175,7 @@
             <h2>Dosyalarım</h2>
             <div class="d-flex align-items-center mb-2">
                 <button id="delete-selected" class="btn btn-danger me-2" disabled>Sil</button>
+                <button id="edit-selected" class="btn btn-secondary me-2" disabled>Düzenle</button>
                 <button id="share-selected" class="btn btn-primary me-2" disabled>Kullanıcıya Gönder</button>
                 <button id="public-share" class="btn btn-outline-primary me-2" disabled>Paylaş</button>
                 <button id="add-to-team" class="btn btn-secondary me-2" disabled>Gruba Ekle</button>
@@ -348,6 +341,30 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
       </div>
+</div>
+</div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Düzenle</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Paylaşım Geçerlilik Tarihi</label>
+          <input type="date" class="form-control" id="edit-share-expiry">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Açıklama</label>
+          <input type="text" class="form-control" id="edit-description">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="edit-save">Kaydet</button>
+      </div>
     </div>
   </div>
 </div>
@@ -450,6 +467,7 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
     window.location.href = '/login';
 });
 const deleteBtn = document.getElementById('delete-selected');
+const editBtn = document.getElementById('edit-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 const publicShareBtn = document.getElementById('public-share');
@@ -491,6 +509,7 @@ let teamModalMode = 'add-files';
 let shareFileName = null;
 let shareFileNames = [];
 let shareExpiry = '';
+let editFileName = null;
 let currentFiles = [];
 let notifications = [];
 let activities = [];
@@ -787,6 +806,7 @@ document.addEventListener('click', (e) => {
 function updateActionButtons() {
     const disabled = selected.size === 0;
     deleteBtn.disabled = disabled;
+    editBtn.disabled = selected.size !== 1;
     if (adminMode) {
         shareBtn.disabled = true;
         addToTeamBtn.disabled = true;
@@ -1234,6 +1254,7 @@ async function loadActivities() {
 }
 
 deleteBtn.addEventListener('click', async () => {
+    if (!confirm('Dosya çöp kutusuna taşınacaktır. 15 gün sonra otomatik olarak silinecektir.')) return;
     for (const value of selected) {
         const formData = new FormData();
         if (adminMode) {
@@ -1247,6 +1268,29 @@ deleteBtn.addEventListener('click', async () => {
         await fetch('/delete', { method: 'POST', body: formData });
     }
     await loadFiles();
+});
+
+editBtn.addEventListener('click', () => {
+    const filename = Array.from(selected)[0];
+    const file = currentFiles.find(f => f.title === filename);
+    editFileName = filename;
+    document.getElementById('edit-share-expiry').value = file.public_expires_at || '';
+    document.getElementById('edit-description').value = file.description || '';
+    const modal = new bootstrap.Modal(document.getElementById('editModal'));
+    modal.show();
+});
+
+document.getElementById('edit-save').addEventListener('click', async () => {
+    const fd = new FormData();
+    fd.append('username', username);
+    fd.append('filename', editFileName);
+    fd.append('share_expires_at', document.getElementById('edit-share-expiry').value);
+    fd.append('description', document.getElementById('edit-description').value);
+    await fetch('/file/update', { method: 'POST', body: fd });
+    const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
+    modal.hide();
+    await loadFiles();
+    editFileName = null;
 });
 
 publicShareBtn.addEventListener('click', () => {
@@ -1766,12 +1810,6 @@ function addFiles(files) {
 async function handleUpload() {
     const result = document.getElementById('upload-result');
     result.innerHTML = '';
-    const days = document.getElementById('file-expiry').value;
-    const expiry = days === '0' ? '' : (() => {
-        const d = new Date();
-        d.setDate(d.getDate() + parseInt(days));
-        return d.toISOString().split('T')[0];
-    })();
     if (pendingFiles.length === 0) {
         result.innerHTML = '<div class="alert alert-danger">Dosya gerekli</div>';
         return;
@@ -1779,7 +1817,7 @@ async function handleUpload() {
     const uploaded = [];
     for (const item of pendingFiles) {
         try {
-            const savedName = await uploadFile(item.file, expiry, item.description);
+            const savedName = await uploadFile(item.file, '', item.description);
             uploaded.push(savedName);
         } catch (e) {
             result.innerHTML = '<div class="alert alert-danger">' + (e.message || 'Hata') + '</div>';
