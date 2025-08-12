@@ -103,7 +103,7 @@
                 <span id="notif-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"></span>
                 <div id="notif-list" class="position-absolute bg-white border rounded d-none p-2" style="top:2rem; left:50%; transform:translateX(-50%); z-index:1000; max-height:600px; width:600px; overflow:auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                     <i id="notif-clear" class="bi bi-x-circle-fill text-secondary position-absolute" style="top:4px; right:4px; cursor:pointer;"></i>
-                    <table class="table table-sm mb-0 mt-4">
+                    <table class="table table-sm mb-0 mt-4 text-start">
                         <thead>
                             <tr>
                                 <th>Tarih</th>
@@ -122,11 +122,11 @@
           <section id="dashboard" class="mb-4">
             <h2>Dashboard</h2>
             <div class="row">
-              <div class="col-md-4 mb-4 text-center">
+              <div class="col-md-4 mb-4">
                 <h3>Disk Kullanımı</h3>
                 <canvas id="disk-chart" style="max-width:200px; max-height:200px; margin:0 auto; display:block;"></canvas>
                 <div class="text-center mt-2"><strong>Toplam: <span id="disk-total"></span></strong></div>
-                <table class="table mt-2" id="disk-table">
+                <table class="table mt-2 text-start" id="disk-table">
                   <thead><tr><th>Dosya</th><th>Boyut</th></tr></thead>
                   <tbody></tbody>
                 </table>
@@ -134,23 +134,23 @@
               <div class="col-md-4 mb-4">
                 <h3>İndirmeler</h3>
                 <h4>Dosyalar</h4>
-                <table class="table mb-4" id="top-files-table">
+                <table class="table mb-4 text-start" id="top-files-table">
                   <thead><tr><th>Dosya</th><th>İndirme</th></tr></thead>
                   <tbody></tbody>
                 </table>
                 <h4>Ülkeler</h4>
-                <table class="table" id="top-countries-table">
+                <table class="table text-start" id="top-countries-table">
                   <thead><tr><th>Ülke</th><th>İndirme</th></tr></thead>
                   <tbody></tbody>
                 </table>
               </div>
               <div class="col-md-4 mb-4">
                 <h3>Ekipler</h3>
-                <ul id="dashboard-teams" class="list-group"></ul>
+                <ul id="dashboard-teams" class="list-group text-start"></ul>
               </div>
               <div class="col-md-4 mb-4">
                 <h3>Süresi Yaklaşan Dosyalar</h3>
-                <table class="table" id="expiring-table">
+                <table class="table text-start" id="expiring-table">
                   <thead><tr><th>Dosya</th><th>Kalan Gün</th></tr></thead>
                   <tbody></tbody>
                 </table>
@@ -165,7 +165,7 @@
                 <input type="file" id="file-input" name="files" multiple hidden>
             </div>
             <h5 id="pending-title" class="d-none">Yüklenecek Dosyalar</h5>
-            <ul id="file-list" class="list-group mb-2"></ul>
+            <ul id="file-list" class="list-group mb-2 text-start"></ul>
             <div class="mb-2">
                 <button id="upload-btn" class="btn btn-primary d-none">Yükle</button>
             </div>
@@ -187,7 +187,7 @@
                     <option value="100">100</option>
                 </select>
             </div>
-            <table id="file-table" class="table table-bordered table-striped shadow">
+            <table id="file-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr>
                         <th></th>
@@ -208,7 +208,7 @@
 
         <section id="incoming" class="d-none">
             <h2>Gelen Dosyalar</h2>
-            <table id="incoming-table" class="table table-bordered table-striped shadow">
+            <table id="incoming-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr>
                         <th>Dosya</th>
@@ -222,7 +222,7 @@
 
         <section id="outgoing" class="d-none">
             <h2>Giden Dosyalar</h2>
-            <table id="outgoing-table" class="table table-bordered table-striped shadow">
+            <table id="outgoing-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr>
                         <th>Dosya</th>
@@ -237,7 +237,7 @@
 
         <section id="trash" class="d-none">
             <h2>Çöp Kutusu</h2>
-            <table id="trash-table" class="table table-bordered table-striped shadow">
+            <table id="trash-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr>
                         <th>Dosya</th>
@@ -251,7 +251,7 @@
 
         <section id="pending" class="d-none">
             <h2>Onay Bekleyenler</h2>
-            <table id="pending-table" class="table table-bordered table-striped shadow">
+            <table id="pending-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr>
                         <th>Dosya</th>
@@ -272,22 +272,22 @@
                 <button id="load-users" type="button" class="btn btn-outline-secondary mb-2">Kullanıcı Ekle</button>
                 <button class="btn btn-primary" type="submit">Oluştur</button>
             </form>
-            <ul id="team-list" class="list-group"></ul>
+            <ul id="team-list" class="list-group text-start"></ul>
         </section>
 
         <section id="team-details" class="mt-4 d-none">
             <h2 id="team-title"></h2>
             <h3>Üyeler</h3>
-            <ul id="team-members-list" class="list-group mb-3"></ul>
+            <ul id="team-members-list" class="list-group mb-3 text-start"></ul>
             <div id="add-member-container" class="mb-3">
                 <button id="add-member-btn" class="btn btn-outline-secondary">Kullanıcı Ekle</button>
             </div>
             <h3>Dosyalar</h3>
-            <ul id="team-files-list" class="list-group"></ul>
+            <ul id="team-files-list" class="list-group text-start"></ul>
         </section>
         <section id="activities" class="d-none">
             <h2>Aktiviteler</h2>
-            <table id="activities-table" class="table">
+            <table id="activities-table" class="table text-start">
                 <thead>
                     <tr>
                         <th>Kullanıcı</th>
@@ -404,7 +404,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <table class="table">
+        <table class="table text-start">
           <thead>
             <tr><th>Tarih</th><th>IP Adresi</th><th>Ülke</th></tr>
           </thead>
@@ -685,7 +685,7 @@ document.getElementById('notif-clear').addEventListener('click', async (e) => {
     fd.append('username', username);
     await fetch('/notifications/clear', { method: 'POST', body: fd });
     notifications = [];
-    document.querySelector('#notif-list tbody').innerHTML = '<tr><td colspan="3" class="text-center">Yeni bildirim yok</td></tr>';
+    document.querySelector('#notif-list tbody').innerHTML = '<tr><td colspan="3" class="text-start">Yeni bildirim yok</td></tr>';
     const countElem = document.getElementById('notif-count');
     const bell = document.getElementById('notif-bell');
     countElem.classList.add('d-none');
@@ -732,7 +732,7 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                     const emptyRow = document.createElement('tr');
                     const emptyTd = document.createElement('td');
                     emptyTd.colSpan = 3;
-                    emptyTd.className = 'text-center';
+                    emptyTd.className = 'text-start';
                     emptyTd.textContent = 'Yeni bildirim yok';
                     emptyRow.appendChild(emptyTd);
                     tbody.appendChild(emptyRow);
@@ -757,7 +757,7 @@ document.getElementById('notif-container').addEventListener('click', async () =>
                     const emptyRow = document.createElement('tr');
                     const emptyTd = document.createElement('td');
                     emptyTd.colSpan = 3;
-                    emptyTd.className = 'text-center';
+                    emptyTd.className = 'text-start';
                     emptyTd.textContent = 'Yeni bildirim yok';
                     emptyRow.appendChild(emptyTd);
                     tbody.appendChild(emptyRow);
@@ -774,7 +774,7 @@ document.getElementById('notif-container').addEventListener('click', async () =>
         const tr = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = 3;
-        td.className = 'text-center';
+        td.className = 'text-start';
         td.textContent = 'Yeni bildirim yok';
         tr.appendChild(td);
         tbody.appendChild(tr);
@@ -1113,7 +1113,7 @@ async function showDownloadLogs(file) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = 3;
-        td.className = 'text-center';
+        td.className = 'text-start';
         td.textContent = 'Kayıt yok';
         tr.appendChild(td);
         tbody.appendChild(tr);
@@ -1244,7 +1244,7 @@ async function loadPending() {
                 if (archiveExts.includes(ext)) {
                     const res = await fetch(`/preview/${item.token}?list=1`);
                     const data = await res.json();
-                    modalContent.innerHTML = `<ul class="mb-0">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
+                    modalContent.innerHTML = `<ul class="mb-0 text-start">${data.files.map(f => `<li>${f}</li>`).join('')}</ul>`;
                 } else if (imageExts.includes(ext)) {
                     modalContent.innerHTML = `<img src="/preview/${item.token}" class="img-fluid" />`;
                 } else if (ext === 'csv') {
