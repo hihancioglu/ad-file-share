@@ -1427,6 +1427,83 @@ def stats():
     )
 
 
+@app.route("/dashboard/data", methods=["POST"])
+def dashboard_data():
+    username = request.form.get("username")
+    user_dir = os.path.join(DATA_DIR, username)
+    files = []
+    total_size = 0
+    if os.path.exists(user_dir):
+        for name in os.listdir(user_dir):
+            path = os.path.join(user_dir, name)
+            if os.path.isfile(path):
+                size = os.path.getsize(path)
+                files.append({"name": name, "size": size})
+                total_size += size
+    db = SessionLocal()
+    try:
+        logs = db.query(DownloadLog).filter_by(username=username).all()
+        counts_by_file = {}
+        counts_by_country = {}
+        for l in logs:
+            counts_by_file[l.filename] = counts_by_file.get(l.filename, 0) + 1
+            if l.country:
+                counts_by_country[l.country] = counts_by_country.get(l.country, 0) + 1
+        top_file = (
+            max(counts_by_file, key=counts_by_file.get) if counts_by_file else None
+        )
+        top_country = (
+            max(counts_by_country, key=counts_by_country.get)
+            if counts_by_country
+            else None
+        )
+
+        memberships = (
+            db.query(TeamMember)
+            .filter_by(username=username, accepted=True)
+            .all()
+        )
+        team_ids = [m.team_id for m in memberships]
+        teams = []
+        if team_ids:
+            for team in db.query(Team).filter(Team.id.in_(team_ids)).all():
+                members = (
+                    db.query(TeamMember)
+                    .filter_by(team_id=team.id, accepted=True)
+                    .all()
+                )
+                file_count = (
+                    db.query(TeamFile).filter_by(team_id=team.id).count()
+                )
+                teams.append(
+                    {
+                        "id": team.id,
+                        "name": team.name,
+                        "member_count": len(members),
+                        "members": [get_full_name(m.username) for m in members],
+                        "file_count": file_count,
+                    }
+                )
+
+        now = datetime.utcnow()
+        upcoming = now + timedelta(days=7)
+        user_files = db.query(UserFile).filter_by(username=username).all()
+        expiring = []
+        for f in user_files:
+            if f.expires_at and now < f.expires_at <= upcoming:
+                days_left = (f.expires_at - now).days
+                expiring.append({"filename": f.filename, "days_left": days_left})
+    finally:
+        db.close()
+
+    return jsonify(
+        disk_usage={"total": total_size, "files": files},
+        downloads={"top_file": top_file, "top_country": top_country},
+        teams=teams,
+        expiring_files=expiring,
+    )
+
+
 @app.route("/teams/create", methods=["POST"])
 def create_team():
     username = request.form.get("username")
