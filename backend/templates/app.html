@@ -19,6 +19,12 @@
     }
     .sort-icon {
         cursor: pointer;
+        font-size: 0.8rem;
+        color: #6c757d;
+        transition: color 0.2s;
+    }
+    .sort-icon.active {
+        color: #0d6efd;
     }
     </style>
 </head>
@@ -392,7 +398,7 @@ function updateSortIcons() {
     if (currentSort.field) {
         const icon = document.querySelector(`#file-table thead th[data-field="${currentSort.field}"] .sort-icon`);
         if (icon) {
-            icon.className = `bi bi-arrow-${currentSort.dir === 1 ? 'up' : 'down'} ms-1 sort-icon`;
+            icon.className = `bi bi-arrow-${currentSort.dir === 1 ? 'up' : 'down'} ms-1 sort-icon active`;
         }
     }
 }
