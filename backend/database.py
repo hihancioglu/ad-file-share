@@ -78,6 +78,9 @@ def add_missing_columns():
     if "description" not in userfile_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE user_files ADD COLUMN description VARCHAR"))
+    if "deleted_at" not in userfile_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE user_files ADD COLUMN deleted_at TIMESTAMP"))
 
     activity_cols = [col["name"] for col in inspector.get_columns("activities")]
     if "category" not in activity_cols:
