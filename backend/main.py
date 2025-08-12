@@ -874,6 +874,9 @@ def list_files():
 
     files = []
     for user in os.listdir(DATA_DIR):
+        # Skip the special trash directory to avoid showing deleted files
+        if user == "_trash":
+            continue
         user_dir = os.path.join(DATA_DIR, user)
         if not os.path.isdir(user_dir):
             continue
