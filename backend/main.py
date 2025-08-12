@@ -61,6 +61,10 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
 CORS(app, supports_credentials=True)
 
+# Allow uploads up to 1 GB
+MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1 GB
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
+
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -675,8 +679,17 @@ def upload_file():
         final_name = current_uploads.get(key, filename)
         file_path = os.path.join(user_dir, final_name)
         mode = "wb" if chunk_index == 0 else "ab"
+
+        data = chunk.read()
+        current_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        if current_size + len(data) > MAX_UPLOAD_SIZE:
+            current_uploads.pop(key, None)
+            return (
+                jsonify(success=False, error="Dosya 1 GB boyut sınırını aşıyor"),
+                413,
+            )
         with open(file_path, mode) as f:
-            f.write(chunk.read())
+            f.write(data)
         # If this was the last chunk, respond with completion info
         if chunk_index + 1 == total_chunks:
             current_uploads.pop(key, None)
@@ -698,6 +711,11 @@ def upload_file():
     uploaded = []
     for file in files:
         if file and file.filename:
+            if file.content_length and file.content_length > MAX_UPLOAD_SIZE:
+                return (
+                    jsonify(success=False, error="Dosya 1 GB boyut sınırını aşıyor"),
+                    413,
+                )
             final_name = get_unique_filename(user_dir, file.filename)
             file_path = os.path.join(user_dir, final_name)
             file.save(file_path)
