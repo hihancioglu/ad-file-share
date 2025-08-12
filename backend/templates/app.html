@@ -125,11 +125,23 @@
                 <h3>Disk Kullanımı</h3>
                 <canvas id="disk-chart" style="max-width:200px; max-height:200px; margin:0 auto; display:block;"></canvas>
                 <div class="text-center mt-2"><strong>Toplam: <span id="disk-total"></span></strong></div>
+                <table class="table mt-2" id="disk-table">
+                  <thead><tr><th>Dosya</th><th>Boyut</th></tr></thead>
+                  <tbody></tbody>
+                </table>
               </div>
               <div class="col-md-4 mb-4">
                 <h3>İndirmeler</h3>
-                <p>En çok indirilen dosya: <span id="top-file"></span></p>
-                <p>En çok indirilen ülke: <span id="top-country"></span></p>
+                <h4>Dosyalar</h4>
+                <table class="table mb-4" id="top-files-table">
+                  <thead><tr><th>Dosya</th><th>İndirme</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <h4>Ülkeler</h4>
+                <table class="table" id="top-countries-table">
+                  <thead><tr><th>Ülke</th><th>İndirme</th></tr></thead>
+                  <tbody></tbody>
+                </table>
               </div>
               <div class="col-md-4 mb-4">
                 <h3>Ekipler</h3>
@@ -1360,8 +1372,30 @@ async function loadDashboard() {
         }
     });
     document.getElementById('disk-total').textContent = formatSize(json.disk_usage.total);
-    document.getElementById('top-file').textContent = json.downloads.top_file || '-';
-    document.getElementById('top-country').textContent = json.downloads.top_country || '-';
+
+    const diskBody = document.querySelector('#disk-table tbody');
+    diskBody.innerHTML = '';
+    json.disk_usage.files.forEach(f => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.name}</td><td>${formatSize(f.size)}</td>`;
+        diskBody.appendChild(tr);
+    });
+
+    const filesBody = document.querySelector('#top-files-table tbody');
+    filesBody.innerHTML = '';
+    json.downloads.files.forEach(f => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.filename}</td><td>${f.count}</td>`;
+        filesBody.appendChild(tr);
+    });
+
+    const countriesBody = document.querySelector('#top-countries-table tbody');
+    countriesBody.innerHTML = '';
+    json.downloads.countries.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${c.country}</td><td>${c.count}</td>`;
+        countriesBody.appendChild(tr);
+    });
     const teamList = document.getElementById('dashboard-teams');
     teamList.innerHTML = '';
     json.teams.forEach(t => {
