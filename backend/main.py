@@ -984,6 +984,56 @@ def delete_file():
     return jsonify(success=True)
 
 
+@app.route("/trash/list", methods=["POST"])
+def list_trash():
+    cleanup_expired_files()
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        metas = (
+            db.query(UserFile)
+            .filter_by(username=username)
+            .filter(UserFile.deleted_at != None)
+            .all()
+        )
+        now = datetime.utcnow()
+        files = []
+        for meta in metas:
+            remaining = (meta.deleted_at + timedelta(days=15) - now).days
+            files.append({"filename": meta.filename, "days_left": remaining})
+        return jsonify(files=files)
+    finally:
+        db.close()
+
+
+@app.route("/trash/restore", methods=["POST"])
+def restore_file():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    trash_path = os.path.join(DATA_DIR, "_trash", username, filename)
+    user_dir = os.path.join(DATA_DIR, username)
+    if not os.path.exists(trash_path):
+        return jsonify(success=False, error="Dosya bulunamadı")
+    os.makedirs(user_dir, exist_ok=True)
+    shutil.move(trash_path, os.path.join(user_dir, filename))
+    db = SessionLocal()
+    try:
+        meta = (
+            db.query(UserFile)
+            .filter_by(username=username, filename=filename)
+            .first()
+        )
+        if meta:
+            meta.deleted_at = None
+            db.commit()
+    finally:
+        db.close()
+    log_activity(
+        username, f"{username} kullanıcısı '{filename}' dosyasını geri aldı", "restore"
+    )
+    return jsonify(success=True)
+
+
 @app.route("/file/update", methods=["POST"])
 def update_file():
     username = request.form.get("username")

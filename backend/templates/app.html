@@ -82,6 +82,7 @@
                     <ul class="nav flex-column ms-3">
                         <li class="nav-item"><a class="nav-link" href="#incoming"><i class="bi bi-inbox me-2"></i>Gelen Dosyalar</a></li>
                         <li class="nav-item"><a class="nav-link" href="#outgoing"><i class="bi bi-box-arrow-up me-2"></i>Giden Dosyalar</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#trash"><i class="bi bi-trash me-2"></i>Çöp Kutusu</a></li>
                         <li class="nav-item d-none" id="pending-menu-item"><a class="nav-link" href="#pending"><i class="bi bi-hourglass-split me-2"></i>Onay Bekleyenler</a></li>
                     </ul>
                 </li>
@@ -227,6 +228,20 @@
                         <th>Dosya</th>
                         <th>Alıcı</th>
                         <th>Geçerlilik</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="trash" class="d-none">
+            <h2>Çöp Kutusu</h2>
+            <table id="trash-table" class="table table-bordered table-striped shadow">
+                <thead>
+                    <tr>
+                        <th>Dosya</th>
+                        <th>Kalan Gün</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -396,6 +411,22 @@
           <tbody id="download-log-body"></tbody>
         </table>
       </div>
+  </div>
+</div>
+</div>
+
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Silme Onayı</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">Dosya çöp kutusuna taşınacaktır. 15 gün sonra otomatik olarak silinecektir.</div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+        <button type="button" class="btn btn-danger" id="confirm-delete">Sil</button>
+      </div>
     </div>
   </div>
 </div>
@@ -521,6 +552,7 @@ const sections = {
     files: document.getElementById('files'),
     incoming: document.getElementById('incoming'),
     outgoing: document.getElementById('outgoing'),
+    trash: document.getElementById('trash'),
     pending: document.getElementById('pending'),
     teams: document.getElementById('teams'),
     'team-details': document.getElementById('team-details'),
@@ -556,7 +588,7 @@ sortableHeaders.forEach(th => {
     });
 });
 updateSortIcons();
-['file-table', 'incoming-table', 'outgoing-table', 'pending-table'].forEach(makeColumnsResizable);
+['file-table', 'incoming-table', 'outgoing-table', 'pending-table', 'trash-table'].forEach(makeColumnsResizable);
 
 function autoFitColumn(table, index) {
     const th = table.querySelectorAll('th')[index];
@@ -774,6 +806,8 @@ function showSection(id) {
             loadIncoming();
         } else if (id === 'outgoing') {
             loadOutgoing();
+        } else if (id === 'trash') {
+            loadTrash();
         } else if (id === 'pending') {
             loadPending();
         } else if (id === 'activities') {
@@ -1147,6 +1181,38 @@ async function loadOutgoing() {
     });
 }
 
+async function loadTrash() {
+    const fd = new FormData();
+    fd.append('username', username);
+    const res = await fetch('/trash/list', { method: 'POST', body: fd });
+    const json = await res.json();
+    const tbody = document.querySelector('#trash-table tbody');
+    tbody.innerHTML = '';
+    json.files.forEach(file => {
+        const tr = document.createElement('tr');
+        const nameTd = document.createElement('td');
+        nameTd.textContent = file.filename;
+        tr.appendChild(nameTd);
+        const daysTd = document.createElement('td');
+        daysTd.textContent = file.days_left;
+        tr.appendChild(daysTd);
+        const actTd = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-secondary';
+        btn.textContent = 'Geri Al';
+        btn.addEventListener('click', async () => {
+            const data = new FormData();
+            data.append('username', username);
+            data.append('filename', file.filename);
+            await fetch('/trash/restore', { method: 'POST', body: data });
+            loadTrash();
+        });
+        actTd.appendChild(btn);
+        tr.appendChild(actTd);
+        tbody.appendChild(tr);
+    });
+}
+
 async function loadPending() {
     const fd = new FormData();
     fd.append('username', username);
@@ -1253,8 +1319,14 @@ async function loadActivities() {
     });
 }
 
-deleteBtn.addEventListener('click', async () => {
-    if (!confirm('Dosya çöp kutusuna taşınacaktır. 15 gün sonra otomatik olarak silinecektir.')) return;
+deleteBtn.addEventListener('click', () => {
+    const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+    modal.show();
+});
+
+document.getElementById('confirm-delete').addEventListener('click', async () => {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal'));
+    modal.hide();
     for (const value of selected) {
         const formData = new FormData();
         if (adminMode) {
