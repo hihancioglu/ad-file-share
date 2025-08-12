@@ -15,6 +15,10 @@
         height: 100%;
         cursor: col-resize;
         user-select: none;
+        background-color: #e9ecef;
+    }
+    .sort-icon {
+        cursor: pointer;
     }
     </style>
 </head>
@@ -380,6 +384,18 @@ window.addEventListener('beforeunload', () => {
     }
 });
 let currentSort = { field: null, dir: 1 };
+
+function updateSortIcons() {
+    document.querySelectorAll('#file-table thead th[data-field] .sort-icon').forEach(icon => {
+        icon.className = 'bi bi-arrow-down-up ms-1 sort-icon';
+    });
+    if (currentSort.field) {
+        const icon = document.querySelector(`#file-table thead th[data-field="${currentSort.field}"] .sort-icon`);
+        if (icon) {
+            icon.className = `bi bi-arrow-${currentSort.dir === 1 ? 'up' : 'down'} ms-1 sort-icon`;
+        }
+    }
+}
 let teams = [];
 let currentTeamId = null;
 let userModalMode = 'create';
@@ -412,9 +428,13 @@ pageSizeSelect.addEventListener('change', () => {
     renderFiles();
 });
 
-document.querySelectorAll('#file-table thead th[data-field]').forEach(th => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
+const sortableHeaders = document.querySelectorAll('#file-table thead th[data-field]');
+sortableHeaders.forEach(th => {
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-arrow-down-up ms-1 sort-icon';
+    th.appendChild(icon);
+    icon.addEventListener('click', (e) => {
+        e.stopPropagation();
         const field = th.dataset.field;
         if (currentSort.field === field) {
             currentSort.dir *= -1;
@@ -422,9 +442,11 @@ document.querySelectorAll('#file-table thead th[data-field]').forEach(th => {
             currentSort.field = field;
             currentSort.dir = 1;
         }
+        updateSortIcons();
         renderFiles();
     });
 });
+updateSortIcons();
 
 ['file-table', 'incoming-table', 'outgoing-table', 'pending-table'].forEach(makeColumnsResizable);
 
