@@ -1479,10 +1479,32 @@ function addFiles(files) {
         pendingTitle.classList.remove('d-none');
     }
     for (const file of files) {
-        pendingFiles.push(file);
+        const item = { file, description: '' };
+        pendingFiles.push(item);
         const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.textContent = `${file.name} - ${formatSize(file.size)}`;
+        li.className = 'list-group-item';
+        const header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-center';
+        header.textContent = `${file.name} - ${formatSize(file.size)}`;
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-link text-danger p-0';
+        removeBtn.innerHTML = '<i class="bi bi-x-circle"></i>';
+        removeBtn.addEventListener('click', () => {
+            pendingFiles = pendingFiles.filter(p => p !== item);
+            li.remove();
+            if (pendingFiles.length === 0) {
+                pendingTitle.classList.add('d-none');
+                uploadBtn.classList.add('d-none');
+            }
+        });
+        header.appendChild(removeBtn);
+        li.appendChild(header);
+        const descInput = document.createElement('input');
+        descInput.type = 'text';
+        descInput.className = 'form-control mt-2';
+        descInput.placeholder = 'Açıklama';
+        descInput.addEventListener('input', e => item.description = e.target.value);
+        li.appendChild(descInput);
         fileList.appendChild(li);
     }
     uploadBtn.classList.remove('d-none');
@@ -1502,9 +1524,9 @@ async function handleUpload() {
         return;
     }
     const uploaded = [];
-    for (const file of pendingFiles) {
+    for (const item of pendingFiles) {
         try {
-            const savedName = await uploadFile(file, expiry);
+            const savedName = await uploadFile(item.file, expiry, item.description);
             uploaded.push(savedName);
         } catch (e) {
             result.innerHTML = '<div class="alert alert-danger">' + (e.message || 'Hata') + '</div>';
@@ -1519,7 +1541,7 @@ async function handleUpload() {
     uploadBtn.classList.add('d-none');
 }
 
-async function uploadFile(file, expiry) {
+async function uploadFile(file, expiry, description) {
     const chunkSize = 5 * 1024 * 1024; // 5MB
     const totalChunks = Math.ceil(file.size / chunkSize);
     const bar = createProgressBar(file.name);
@@ -1536,6 +1558,7 @@ async function uploadFile(file, expiry) {
         formData.append('total_chunks', totalChunks);
         formData.append('expires_at', expiry);
         formData.append('file', chunk);
+        formData.append('description', description);
         const res = await fetch('/upload', { method: 'POST', body: formData });
         const json = await res.json();
         if (!json.success) {
