@@ -1698,6 +1698,7 @@ def dashboard_data():
                 total_size += size
     files.sort(key=lambda f: f["size"], reverse=True)
     top_disk_files = files[:5]
+    file_count = len(files)
     db = SessionLocal()
     try:
         logs = db.query(DownloadLog).filter_by(username=username).all()
@@ -1713,6 +1714,7 @@ def dashboard_data():
         top_countries = sorted(
             counts_by_country.items(), key=lambda x: x[1], reverse=True
         )[:5]
+        download_count = len(logs)
 
         memberships = (
             db.query(TeamMember)
@@ -1773,6 +1775,8 @@ def dashboard_data():
 
     return jsonify(
         disk_usage={"total": total_size, "files": top_disk_files},
+        file_count=file_count,
+        download_count=download_count,
         downloads={
             "files": [{"filename": f, "count": c} for f, c in top_files],
             "countries": [{"country": c, "count": n} for c, n in top_countries],

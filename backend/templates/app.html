@@ -121,6 +121,10 @@
 
           <section id="dashboard" class="mb-4">
             <h2>Dashboard</h2>
+            <div class="mb-3">
+              <span class="me-4"><strong>Toplam Dosya:</strong> <span id="dashboard-file-count"></span></span>
+              <span><strong>Toplam İndirme:</strong> <span id="dashboard-download-count"></span></span>
+            </div>
             <div class="row">
               <div class="col-md-4 mb-4">
                 <h3>Disk Kullanımı</h3>
@@ -1572,6 +1576,9 @@ async function loadDashboard() {
     data.append('username', username);
     const res = await fetch('/dashboard/data', { method: 'POST', body: data });
     const json = await res.json();
+
+    document.getElementById('dashboard-file-count').textContent = json.file_count;
+    document.getElementById('dashboard-download-count').textContent = json.download_count;
 
     const ctx = document.getElementById('disk-chart');
     const labels = json.disk_usage.files.map(f => f.name);
