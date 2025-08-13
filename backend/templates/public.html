@@ -27,7 +27,7 @@
         <p>Paylaşan: {{ uploader }}</p>
         <p>Boyut: {{ size }}</p>
         <p>Açıklama: {{ description }}</p>
-        <p>Geçerlilik: {{ expires_at }}</p>
+        <p>Geçerlilik: {{ expires_at or 'Süresiz' }}</p>
         <a class="btn btn-primary" href="{{ url_for('public_download_file', token=token) }}">Download</a>
         <button class="btn btn-secondary ms-2" id="toggle-comment">Yorum Ekle</button>
         <div id="comment-form" class="mt-3 d-none">
