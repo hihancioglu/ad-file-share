@@ -1016,6 +1016,7 @@ def list_messages():
         )
         result = [
             {
+                "id": m.id,
                 "sender": m.sender,
                 "message": m.message,
                 "created_at": m.created_at.strftime("%d/%m/%Y %H:%M"),
@@ -1028,6 +1029,21 @@ def list_messages():
     finally:
         db.close()
     return jsonify(messages=result)
+
+
+@app.route("/messages/delete", methods=["POST"])
+def delete_message():
+    msg_id = request.form.get("id")
+    db = SessionLocal()
+    try:
+        msg = db.query(FileMessage).filter_by(id=msg_id).first()
+        if msg:
+            db.delete(msg)
+            db.commit()
+            return jsonify(success=True)
+        return jsonify(success=False, error="Mesaj bulunamadı"), 404
+    finally:
+        db.close()
 
 
 @app.route("/download/logs", methods=["POST"])
