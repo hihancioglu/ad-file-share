@@ -39,6 +39,7 @@ For public shares requiring manager approval, the backend sends an e-mail to the
 - `GRAPH_CLIENT_ID`
 - `GRAPH_CLIENT_SECRET`
 - `GRAPH_SENDER` for the account used to send mail
+- `WHITE_LIST` comma-separated usernames allowed to log in even if the Manager field is empty
 
 Additional configuration options and dependencies can be found in `backend/requirements.txt`.
 
