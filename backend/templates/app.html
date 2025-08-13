@@ -67,6 +67,28 @@
         flex-shrink: 0;
         height: 100vh;
     }
+    .file-title-cell {
+        position: relative;
+    }
+    .file-title-cell .file-title {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .file-title-cell .file-actions {
+        position: absolute;
+        top: 0;
+        right: 0;
+        display: flex;
+        gap: 0.25rem;
+        background-color: rgba(255,255,255,0.8);
+        padding-left: 0.25rem;
+        transition: background-color 0.2s;
+    }
+    .file-title-cell:hover .file-actions {
+        background-color: rgba(255,255,255,0.95);
+    }
     </style>
 </head>
 <body>
@@ -1002,8 +1024,14 @@ function renderFiles() {
         tr.appendChild(cbTd);
 
         const titleTd = document.createElement('td');
-        titleTd.textContent = adminMode ? `${file.username} - ${file.title}` : file.title;
+        titleTd.className = 'file-title-cell';
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'file-title';
+        titleSpan.textContent = adminMode ? `${file.username} - ${file.title}` : file.title;
+        titleTd.appendChild(titleSpan);
         if (file.link) {
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'file-actions';
             const linkBtn = document.createElement('button');
             linkBtn.className = 'btn btn-sm ms-2';
             const linkIcon = document.createElement('i');
@@ -1043,12 +1071,12 @@ function renderFiles() {
                 linkBtn.insertAdjacentElement('afterend', msg);
                 setTimeout(() => msg.remove(), 2000);
             });
-            titleTd.appendChild(linkBtn);
+            actionsDiv.appendChild(linkBtn);
             const dlBtn = document.createElement('button');
             dlBtn.className = 'btn btn-sm btn-outline-secondary ms-2';
             dlBtn.textContent = `${file.download_count} İndirme`;
             dlBtn.addEventListener('click', () => showDownloadLogs(file));
-            titleTd.appendChild(dlBtn);
+            actionsDiv.appendChild(dlBtn);
             const msgBtn = document.createElement('button');
             msgBtn.className = 'btn btn-sm btn-outline-info ms-2 d-inline-flex align-items-center';
             msgBtn.innerHTML = '<i class="bi bi-chat-dots"></i>';
@@ -1059,7 +1087,8 @@ function renderFiles() {
                 msgBtn.appendChild(countSpan);
             }
             msgBtn.addEventListener('click', () => showMessages(file));
-            titleTd.appendChild(msgBtn);
+            actionsDiv.appendChild(msgBtn);
+            titleTd.appendChild(actionsDiv);
         }
         tr.appendChild(titleTd);
 
