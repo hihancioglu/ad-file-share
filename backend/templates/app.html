@@ -1068,7 +1068,7 @@ function renderFiles() {
         tr.appendChild(addedTd);
 
         const expTd = document.createElement('td');
-        expTd.textContent = file.public_expires_in || file.expires_in || '';
+        expTd.textContent = file.public_expires_in || file.expires_in || 'Süresiz';
         tr.appendChild(expTd);
 
         const extTd = document.createElement('td');
@@ -1209,7 +1209,7 @@ async function loadIncoming() {
         senderTd.textContent = file.sender;
         tr.appendChild(senderTd);
        const expTd = document.createElement('td');
-        expTd.textContent = file.expires_at;
+        expTd.textContent = file.expires_at || 'Süresiz';
         tr.appendChild(expTd);
         tbody.appendChild(tr);
     });
@@ -1231,7 +1231,7 @@ async function loadOutgoing() {
         targetTd.textContent = file.target;
         tr.appendChild(targetTd);
         const expTd = document.createElement('td');
-        expTd.textContent = file.expires_at;
+        expTd.textContent = file.expires_at || 'Süresiz';
         tr.appendChild(expTd);
         const actTd = document.createElement('td');
         const btn = document.createElement('button');
@@ -1354,7 +1354,7 @@ async function loadPending() {
         userTd.textContent = item.username;
         tr.appendChild(userTd);
         const expTd = document.createElement('td');
-        expTd.textContent = item.expires_at;
+        expTd.textContent = item.expires_at || 'Süresiz';
         tr.appendChild(expTd);
         const actTd = document.createElement('td');
         const approveBtn = document.createElement('button');
