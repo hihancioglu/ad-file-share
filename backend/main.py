@@ -126,6 +126,10 @@ ADMIN_USERS = {
     u.strip().lower() for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()
 }
 
+LOGIN_WHITELIST = {
+    u.strip().lower() for u in os.getenv("WHITE_LIST", "").split(",") if u.strip()
+}
+
 
 def is_admin(username: str) -> bool:
     return username.lower() in ADMIN_USERS
@@ -166,6 +170,34 @@ def get_user_names(username: str):
         except Exception:
             pass
     return "", ""
+
+
+def has_manager(username: str) -> bool:
+    server = ldap3.Server(LDAP_SERVER)
+    user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=user_dn,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return False
+        search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
+        conn.search(LDAP_BASE_DN, search_filter, attributes=["manager"])
+        if conn.entries:
+            entry = conn.entries[0]
+            manager = getattr(entry, "manager", None)
+            return bool(manager and manager.value)
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+    return False
 
 
 def get_full_name(username: str):
@@ -572,6 +604,11 @@ def login():
         if not conn.bind():
             return jsonify(success=False, error="Kullanıcı adı veya şifre hatalı")
         conn.unbind()
+        if not has_manager(username) and username not in LOGIN_WHITELIST:
+            return jsonify(
+                success=False,
+                error="Sisteme giriş için Bilgi İşlemi arayınız.",
+            )
         session["username"] = username
         given, sn = get_user_names(username)
         log_activity(
