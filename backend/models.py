@@ -99,4 +99,17 @@ class UserFile(Base):
     deleted_at = Column(DateTime)
 
 
+class FileMessage(Base):
+    __tablename__ = "file_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, index=True)
+    username = Column(String, index=True)
+    filename = Column(String, index=True)
+    sender = Column(String)
+    message = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=3))
+    read = Column(Boolean, default=False)
+
+
 Base.metadata.create_all(engine)
