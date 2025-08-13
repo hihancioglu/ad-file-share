@@ -1026,7 +1026,7 @@ function renderFiles() {
                 linkIcon.classList.add('bi-check');
             } else {
                 linkBtn.classList.add('btn-warning');
-                linkBtn.title = 'Onay bekliyor';
+                linkBtn.title = file.manager_name ? `Onay bekliyor: ${file.manager_name}` : 'Onay bekliyor';
                 linkIcon.classList.add('bi-hourglass-split');
             }
             linkBtn.addEventListener('click', async () => {

@@ -147,7 +147,7 @@ def get_user_names(username: str):
             authentication=ldap3.NTLM,
         )
         if not conn.bind():
-            return "", ""
+            return "", "", ""
         search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
         conn.search(LDAP_BASE_DN, search_filter, attributes=["givenName", "sn"])
         if conn.entries:
@@ -210,34 +210,36 @@ def get_manager_info(username: str):
             authentication=ldap3.NTLM,
         )
         if not conn.bind():
-            return "", ""
+            return "", "", ""
         search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
         conn.search(LDAP_BASE_DN, search_filter, attributes=["manager"])
         if not conn.entries:
-            return "", ""
+            return "", "", ""
         manager_dn = getattr(conn.entries[0], "manager", None)
         if not manager_dn:
-            return "", ""
+            return "", "", ""
         conn.search(
             manager_dn.value,
             "(objectClass=user)",
-            attributes=["mail", "sAMAccountName"],
+            attributes=["mail", "sAMAccountName", "displayName"],
         )
         if conn.entries:
             mail_attr = getattr(conn.entries[0], "mail", None)
             user_attr = getattr(conn.entries[0], "sAMAccountName", None)
+            name_attr = getattr(conn.entries[0], "displayName", None)
             return (
                 user_attr.value if user_attr else "",
                 mail_attr.value if mail_attr else "",
+                name_attr.value if name_attr else "",
             )
     except Exception:
-        return "", ""
+        return "", "", ""
     finally:
         try:
             conn.unbind()
         except Exception:
             pass
-    return "", ""
+    return "", "", ""
 
 
 def is_department_manager(username: str) -> bool:
@@ -300,7 +302,7 @@ def require_manager_auth(link):
     user = session.get("username")
     if not user:
         return redirect(f"/login?next={request.path}")
-    manager_user, _ = get_manager_info(link.username)
+    manager_user, _, _ = get_manager_info(link.username)
     if user != manager_user and not is_admin(user):
         return render_template("message.html", message="Yetkisiz"), 403
     return None
@@ -309,7 +311,7 @@ def require_manager_auth(link):
 def send_approval_email(
     username: str, filename: str, approve_token: str, reject_token: str
 ):
-    _, manager_email = get_manager_info(username)
+    _, manager_email, _ = get_manager_info(username)
     if not (
         manager_email
         and GRAPH_TENANT_ID
@@ -413,7 +415,7 @@ def delete_share_link(username: str, filename: str):
 
 
 def delete_share_notification(username: str, filename: str):
-    mgr_user, _ = get_manager_info(username)
+    mgr_user, _, _ = get_manager_info(username)
     if not mgr_user:
         return
     db = SessionLocal()
@@ -827,6 +829,7 @@ def list_files():
         finally:
             db.close()
 
+        _, _, manager_name = get_manager_info(username)
         files = []
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
@@ -837,6 +840,7 @@ def list_files():
             link_exp = link_info.get("expires_at")
             approved = link_info.get("approved", False)
             rejected = link_info.get("rejected", False)
+            mgr_name = manager_name if token and not approved else ""
             files.append(
                 {
                     "title": filename,
@@ -857,6 +861,7 @@ def list_files():
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
+                    "manager_name": mgr_name,
                     "download_count": counts.get(filename, 0),
                     "message_count": msg_counts.get(filename, 0),
                 }
@@ -917,6 +922,7 @@ def list_files():
         user_dir = os.path.join(DATA_DIR, user)
         if not os.path.isdir(user_dir):
             continue
+        _, _, manager_name = get_manager_info(user)
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
@@ -926,6 +932,7 @@ def list_files():
             link_exp = link_info.get("expires_at")
             approved = link_info.get("approved", False)
             rejected = link_info.get("rejected", False)
+            mgr_name = manager_name if token and not approved else ""
             files.append(
                 {
                     "title": filename,
@@ -947,6 +954,7 @@ def list_files():
                     "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
+                    "manager_name": mgr_name,
                     "download_count": counts.get((user, filename), 0),
                     "message_count": msg_counts.get((user, filename), 0),
                 }
@@ -1252,7 +1260,7 @@ def share_file():
             )
         else:
             send_approval_email(username, filename, approve_token, reject_token)
-            mgr_user, _ = get_manager_info(username)
+            mgr_user, _, _ = get_manager_info(username)
             if mgr_user:
                 create_notification(
                     mgr_user,
@@ -1338,7 +1346,7 @@ def pending_shares():
                     }
                 )
             else:
-                mgr_user, _ = get_manager_info(link.username)
+                mgr_user, _, _ = get_manager_info(link.username)
                 if mgr_user == user:
                     shares.append(
                         {
