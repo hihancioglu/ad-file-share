@@ -1068,7 +1068,13 @@ function renderFiles() {
         tr.appendChild(addedTd);
 
         const expTd = document.createElement('td');
-        expTd.textContent = file.public_expires_in || file.expires_in || 'Süresiz';
+        let expText = '';
+        if (file.link) {
+            expText = file.public_expires_in || 'Süresiz';
+        } else if (file.expires_in) {
+            expText = file.expires_in;
+        }
+        expTd.textContent = expText;
         tr.appendChild(expTd);
 
         const extTd = document.createElement('td');
