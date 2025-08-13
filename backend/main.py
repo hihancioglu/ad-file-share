@@ -1285,8 +1285,8 @@ def share_file():
         if file_exp:
             if not expires_at or expires_at > file_exp:
                 expires_at = file_exp
-        auto_approve = is_admin(username)
         approver_user, approver_email, _ = get_manager_info(username)
+        auto_approve = is_admin(username) or not approver_user
         if not approver_user:
             approver_user = next(iter(ADMIN_USERS), None)
             approver_email = get_user_email(approver_user) if approver_user else ""
