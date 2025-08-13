@@ -1049,17 +1049,11 @@ function renderFiles() {
             dlBtn.textContent = `${file.download_count} İndirme`;
             dlBtn.addEventListener('click', () => showDownloadLogs(file));
             titleTd.appendChild(dlBtn);
-            if (file.message_count && file.message_count > 0) {
-                const msgBtn = document.createElement('button');
-                msgBtn.className = 'btn btn-sm btn-outline-info ms-2 position-relative';
-                msgBtn.innerHTML = '<i class="bi bi-chat-dots"></i>';
-                const badge = document.createElement('span');
-                badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
-                badge.textContent = file.message_count;
-                msgBtn.appendChild(badge);
-                msgBtn.addEventListener('click', () => showMessages(file));
-                titleTd.appendChild(msgBtn);
-            }
+            const msgBtn = document.createElement('button');
+            msgBtn.className = 'btn btn-sm btn-outline-info ms-2 d-flex align-items-center';
+            msgBtn.innerHTML = `<i class="bi bi-chat-dots"></i><span class="ms-1">${file.message_count || 0}</span>`;
+            msgBtn.addEventListener('click', () => showMessages(file));
+            titleTd.appendChild(msgBtn);
         }
         tr.appendChild(titleTd);
 
@@ -1166,14 +1160,31 @@ async function showMessages(file) {
     } else {
         json.messages.forEach(m => {
             const li = document.createElement('li');
-            li.className = 'list-group-item';
-            li.innerHTML = `<strong>${m.sender}</strong>: ${m.message}`;
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            const msg = document.createElement('div');
+            msg.innerHTML = `<strong>${m.sender}</strong>: ${m.message}`;
+            li.appendChild(msg);
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-sm btn-danger';
+            delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            delBtn.addEventListener('click', () => deleteMessage(m.id, file));
+            li.appendChild(delBtn);
             list.appendChild(li);
         });
     }
     const modal = new bootstrap.Modal(document.getElementById('messageModal'));
     modal.show();
     loadFiles();
+}
+
+async function deleteMessage(id, file) {
+    const fd = new FormData();
+    fd.append('id', id);
+    const res = await fetch('/messages/delete', { method: 'POST', body: fd });
+    const json = await res.json();
+    if (json.success) {
+        showMessages(file);
+    }
 }
 
 async function loadIncoming() {

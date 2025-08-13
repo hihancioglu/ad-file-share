@@ -57,8 +57,9 @@ document.getElementById('send-message').addEventListener('click', async () => {
     const result = document.getElementById('msg-result');
     if (data.success) {
         result.className = 'text-success';
-        result.textContent = 'Gönderildi';
-        document.getElementById('comment-form').classList.add('d-none');
+        result.textContent = 'Mesaj gönderildi';
+        document.getElementById('sender').value = '';
+        document.getElementById('message').value = '';
     } else {
         result.className = 'text-danger';
         result.textContent = data.error || 'Hata';
