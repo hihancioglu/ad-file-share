@@ -349,7 +349,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-info"><i class="bi bi-exclamation-triangle-fill me-2"></i>Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.</div>
+        <div class="alert alert-info"><i class="bi bi-exclamation-triangle-fill me-2"></i><span id="manager-approval-message">Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.</span></div>
         <select id="share-expiry" class="form-select">
           <option value="1">1 gün</option>
           <option value="7" selected>7 gün</option>
@@ -559,6 +559,7 @@ let teamModalMode = 'add-files';
 let shareFileName = null;
 let shareFileNames = [];
 let shareExpiry = '';
+let managerName = '';
 let editFileName = null;
 let currentFiles = [];
 let notifications = [];
@@ -809,6 +810,20 @@ document.getElementById('notif-container').addEventListener('click', async () =>
 
 loadNotifications();
 setInterval(loadNotifications, 30000);
+
+async function loadManagerName() {
+    try {
+        const res = await fetch('/manager/name');
+        if (res.ok) {
+            const data = await res.json();
+            managerName = data.manager || '';
+        }
+    } catch (e) {
+        managerName = '';
+    }
+}
+
+loadManagerName();
 
 function showSection(id) {
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
@@ -1476,6 +1491,12 @@ publicShareBtn.addEventListener('click', () => {
     } else {
         shareFileName = filename;
         const modal = new bootstrap.Modal(document.getElementById('shareLinkModal'));
+        const msgEl = document.getElementById('manager-approval-message');
+        if (managerName) {
+            msgEl.textContent = `${managerName} onayı sonrası dosya paylaşıma açılacaktır.`;
+        } else {
+            msgEl.textContent = 'Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.';
+        }
         modal.show();
     }
 });

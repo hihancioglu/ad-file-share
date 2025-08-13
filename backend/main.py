@@ -242,7 +242,7 @@ def get_manager_info(username: str):
     return "", "", ""
 
 
-def is_department_manager(username: str) -> bool:
+def get_user_email(username: str) -> str:
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
     try:
@@ -253,29 +253,20 @@ def is_department_manager(username: str) -> bool:
             authentication=ldap3.NTLM,
         )
         if not conn.bind():
-            return False
+            return ""
         search_filter = f"(&(objectClass=user)(sAMAccountName={username}))"
-        conn.search(
-            LDAP_BASE_DN,
-            search_filter,
-            attributes=["manager", "directReports"],
-        )
-        if not conn.entries:
-            return False
-        entry = conn.entries[0]
-        manager_attr = getattr(entry, "manager", None)
-        reports_attr = getattr(entry, "directReports", None)
-        has_no_manager = not manager_attr or not manager_attr.value
-        has_reports = len(reports_attr) > 0 if reports_attr else False
-        return has_no_manager and has_reports
+        conn.search(LDAP_BASE_DN, search_filter, attributes=["mail"])
+        if conn.entries:
+            mail_attr = getattr(conn.entries[0], "mail", None)
+            return mail_attr.value if mail_attr else ""
     except Exception:
-        return False
+        return ""
     finally:
         try:
             conn.unbind()
         except Exception:
             pass
-
+    return ""
 
 def authenticate_user(username: str, password: str) -> bool:
     """Authenticate a user against LDAP."""
@@ -297,6 +288,18 @@ def authenticate_user(username: str, password: str) -> bool:
             pass
 
 
+@app.route("/manager/name", methods=["GET"])
+def manager_name_endpoint():
+    user = session.get("username")
+    if not user:
+        return jsonify(manager="")
+    _, _, manager_name = get_manager_info(user)
+    if not manager_name:
+        admin_user = next(iter(ADMIN_USERS), None)
+        manager_name = get_full_name(admin_user) if admin_user else ""
+    return jsonify(manager=manager_name)
+
+
 def require_manager_auth(link):
     """Ensure the requester is the manager of the link's owner or an admin."""
     user = session.get("username")
@@ -309,9 +312,13 @@ def require_manager_auth(link):
 
 
 def send_approval_email(
-    username: str, filename: str, approve_token: str, reject_token: str
+    username: str,
+    filename: str,
+    approve_token: str,
+    reject_token: str,
+    approver_email: str,
 ):
-    _, manager_email, _ = get_manager_info(username)
+    manager_email = approver_email
     if not (
         manager_email
         and GRAPH_TENANT_ID
@@ -417,7 +424,9 @@ def delete_share_link(username: str, filename: str):
 def delete_share_notification(username: str, filename: str):
     mgr_user, _, _ = get_manager_info(username)
     if not mgr_user:
-        return
+        mgr_user = next(iter(ADMIN_USERS), None)
+        if not mgr_user:
+            return
     db = SessionLocal()
     try:
         message = f"'{filename}' dosyası için onay bekleyen paylaşım"
@@ -830,6 +839,9 @@ def list_files():
             db.close()
 
         _, _, manager_name = get_manager_info(username)
+        if not manager_name:
+            admin_user = next(iter(ADMIN_USERS), None)
+            manager_name = get_full_name(admin_user) if admin_user else ""
         files = []
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
@@ -923,6 +935,9 @@ def list_files():
         if not os.path.isdir(user_dir):
             continue
         _, _, manager_name = get_manager_info(user)
+        if not manager_name:
+            admin_user = next(iter(ADMIN_USERS), None)
+            manager_name = get_full_name(admin_user) if admin_user else ""
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
@@ -1233,7 +1248,11 @@ def share_file():
         if file_exp:
             if not expires_at or expires_at > file_exp:
                 expires_at = file_exp
-        auto_approve = is_department_manager(username)
+        auto_approve = is_admin(username)
+        approver_user, approver_email, _ = get_manager_info(username)
+        if not approver_user:
+            approver_user = next(iter(ADMIN_USERS), None)
+            approver_email = get_user_email(approver_user) if approver_user else ""
         approve_token = None
         reject_token = None
         if not auto_approve:
@@ -1259,11 +1278,16 @@ def share_file():
                 f"'{filename}' paylaşımı onaylandı",
             )
         else:
-            send_approval_email(username, filename, approve_token, reject_token)
-            mgr_user, _, _ = get_manager_info(username)
-            if mgr_user:
+            send_approval_email(
+                username,
+                filename,
+                approve_token,
+                reject_token,
+                approver_email,
+            )
+            if approver_user:
                 create_notification(
-                    mgr_user,
+                    approver_user,
                     f"'{filename}' dosyası için onay bekleyen paylaşım",
                 )
     return jsonify(success=True, link=f"{PUBLIC_BASE_URL}/public/{token}")
@@ -1357,6 +1381,8 @@ def pending_shares():
                 )
             else:
                 mgr_user, _, _ = get_manager_info(link.username)
+                if not mgr_user:
+                    mgr_user = next(iter(ADMIN_USERS), None)
                 if mgr_user == user:
                     shares.append(
                         {
