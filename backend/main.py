@@ -53,6 +53,7 @@ from models import (
     Activity,
     UserShare,
     UserFile,
+    FileMessage,
 )
 from sqlalchemy import func
 
@@ -816,6 +817,13 @@ def list_files():
                 .group_by(DownloadLog.filename)
                 .all()
             }
+            msg_counts = {
+                fn: cnt
+                for fn, cnt in db.query(FileMessage.filename, func.count())
+                .filter_by(username=username, read=False)
+                .group_by(FileMessage.filename)
+                .all()
+            }
         finally:
             db.close()
 
@@ -850,6 +858,7 @@ def list_files():
                     "approved": approved,
                     "rejected": rejected,
                     "download_count": counts.get(filename, 0),
+                    "message_count": msg_counts.get(filename, 0),
                 }
             )
         files.sort(key=lambda f: f["added"], reverse=True)
@@ -884,6 +893,17 @@ def list_files():
                 func.count(),
             )
             .group_by(DownloadLog.username, DownloadLog.filename)
+            .all()
+        }
+        msg_counts = {
+            (username, filename): cnt
+            for username, filename, cnt in db.query(
+                FileMessage.username,
+                FileMessage.filename,
+                func.count(),
+            )
+            .filter(FileMessage.read == False)
+            .group_by(FileMessage.username, FileMessage.filename)
             .all()
         }
     finally:
@@ -928,6 +948,7 @@ def list_files():
                     "approved": approved,
                     "rejected": rejected,
                     "download_count": counts.get((user, filename), 0),
+                    "message_count": msg_counts.get((user, filename), 0),
                 }
             )
     files.sort(key=lambda f: f["added"], reverse=True)
@@ -945,6 +966,68 @@ def download_file():
         return jsonify(success=False, error="Dosya bulunamadı")
     log_download(username, filename, session.get("username"))
     return send_file(file_path, as_attachment=True, download_name=filename)
+
+
+@app.route("/public/<token>/message", methods=["POST"])
+def public_message(token):
+    sender = request.form.get("sender", "")
+    text = request.form.get("message", "").strip()
+    if not text:
+        return jsonify(success=False, error="Mesaj boş olamaz"), 400
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+        if (
+            not link
+            or link.rejected
+            or not link.approved
+            or (link.expires_at and link.expires_at < datetime.utcnow())
+        ):
+            return jsonify(success=False, error="Bağlantı geçersiz"), 404
+        username = link.username
+        filename = link.filename
+        db.add(
+            FileMessage(
+                token=token,
+                username=username,
+                filename=filename,
+                sender=sender,
+                message=text,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    create_notification(username, f"'{filename}' dosyasına yeni mesaj geldi")
+    return jsonify(success=True)
+
+
+@app.route("/messages/list", methods=["POST"])
+def list_messages():
+    username = request.form.get("username")
+    filename = request.form.get("filename")
+    db = SessionLocal()
+    try:
+        msgs = (
+            db.query(FileMessage)
+            .filter_by(username=username, filename=filename)
+            .order_by(FileMessage.created_at)
+            .all()
+        )
+        result = [
+            {
+                "sender": m.sender,
+                "message": m.message,
+                "created_at": m.created_at.strftime("%d/%m/%Y %H:%M"),
+            }
+            for m in msgs
+        ]
+        for m in msgs:
+            m.read = True
+        db.commit()
+    finally:
+        db.close()
+    return jsonify(messages=result)
 
 
 @app.route("/download/logs", methods=["POST"])
@@ -1509,12 +1592,19 @@ def public_page(token):
         return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
     size = format_file_size(os.path.getsize(file_path))
     uploader = get_full_name(username)
+    db = SessionLocal()
+    try:
+        meta = db.query(UserFile).filter_by(username=username, filename=filename).first()
+        description = meta.description if meta else ""
+    finally:
+        db.close()
     return render_template(
         "public.html",
         token=token,
         filename=filename,
         uploader=uploader,
         size=size,
+        description=description,
         expires_at=link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
     )
 

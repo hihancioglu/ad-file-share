@@ -26,9 +26,44 @@
         <h2>{{ filename }}</h2>
         <p>Paylaşan: {{ uploader }}</p>
         <p>Boyut: {{ size }}</p>
+        <p>Açıklama: {{ description }}</p>
         <p>Geçerlilik: {{ expires_at }}</p>
         <a class="btn btn-primary" href="{{ url_for('public_download_file', token=token) }}">Download</a>
+        <button class="btn btn-secondary ms-2" id="toggle-comment">Yorum Ekle</button>
+        <div id="comment-form" class="mt-3 d-none">
+            <div class="mb-2">
+                <input type="text" class="form-control" id="sender" placeholder="Gönderen">
+            </div>
+            <div class="mb-2">
+                <textarea class="form-control" id="message" rows="3" placeholder="Mesaj"></textarea>
+            </div>
+            <button class="btn btn-primary" id="send-message">Gönder</button>
+            <div id="msg-result" class="mt-2"></div>
+        </div>
     {% endif %}
 </div>
+<script>
+document.getElementById('toggle-comment').addEventListener('click', () => {
+    document.getElementById('comment-form').classList.toggle('d-none');
+});
+document.getElementById('send-message').addEventListener('click', async () => {
+    const sender = document.getElementById('sender').value;
+    const message = document.getElementById('message').value;
+    const fd = new FormData();
+    fd.append('sender', sender);
+    fd.append('message', message);
+    const resp = await fetch('{{ url_for("public_message", token=token) }}', { method: 'POST', body: fd });
+    const data = await resp.json();
+    const result = document.getElementById('msg-result');
+    if (data.success) {
+        result.className = 'text-success';
+        result.textContent = 'Gönderildi';
+        document.getElementById('comment-form').classList.add('d-none');
+    } else {
+        result.className = 'text-danger';
+        result.textContent = data.error || 'Hata';
+    }
+});
+</script>
 </body>
 </html>

@@ -393,8 +393,8 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="preview-content"></div>
-    </div>
   </div>
+</div>
 </div>
 
 <div class="modal fade" id="downloadLogModal" tabindex="-1">
@@ -414,6 +414,20 @@
       </div>
   </div>
 </div>
+</div>
+
+<div class="modal fade" id="messageModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mesajlar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="list-group text-start" id="message-list"></ul>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="modal fade" id="deleteConfirmModal" tabindex="-1">
@@ -1035,6 +1049,17 @@ function renderFiles() {
             dlBtn.textContent = `${file.download_count} İndirme`;
             dlBtn.addEventListener('click', () => showDownloadLogs(file));
             titleTd.appendChild(dlBtn);
+            if (file.message_count && file.message_count > 0) {
+                const msgBtn = document.createElement('button');
+                msgBtn.className = 'btn btn-sm btn-outline-info ms-2 position-relative';
+                msgBtn.innerHTML = '<i class="bi bi-chat-dots"></i>';
+                const badge = document.createElement('span');
+                badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
+                badge.textContent = file.message_count;
+                msgBtn.appendChild(badge);
+                msgBtn.addEventListener('click', () => showMessages(file));
+                titleTd.appendChild(msgBtn);
+            }
         }
         tr.appendChild(titleTd);
 
@@ -1123,6 +1148,32 @@ async function showDownloadLogs(file) {
     }
     const modal = new bootstrap.Modal(document.getElementById('downloadLogModal'));
     modal.show();
+}
+
+async function showMessages(file) {
+    const fd = new FormData();
+    fd.append('username', adminMode ? file.username : username);
+    fd.append('filename', file.title);
+    const res = await fetch('/messages/list', { method: 'POST', body: fd });
+    const json = await res.json();
+    const list = document.getElementById('message-list');
+    list.innerHTML = '';
+    if (json.messages.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = 'Mesaj yok';
+        list.appendChild(li);
+    } else {
+        json.messages.forEach(m => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.innerHTML = `<strong>${m.sender}</strong>: ${m.message}`;
+            list.appendChild(li);
+        });
+    }
+    const modal = new bootstrap.Modal(document.getElementById('messageModal'));
+    modal.show();
+    loadFiles();
 }
 
 async function loadIncoming() {
