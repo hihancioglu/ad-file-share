@@ -1049,13 +1049,17 @@ function renderFiles() {
             dlBtn.textContent = `${file.download_count} İndirme`;
             dlBtn.addEventListener('click', () => showDownloadLogs(file));
             titleTd.appendChild(dlBtn);
+            const msgBtn = document.createElement('button');
+            msgBtn.className = 'btn btn-sm btn-outline-info ms-2 d-inline-flex align-items-center';
+            msgBtn.innerHTML = '<i class="bi bi-chat-dots"></i>';
             if (file.message_count > 0) {
-                const msgBtn = document.createElement('button');
-                msgBtn.className = 'btn btn-sm btn-outline-info ms-2 d-inline-flex align-items-center';
-                msgBtn.innerHTML = `<i class="bi bi-chat-dots"></i><span class="ms-1">${file.message_count}</span>`;
-                msgBtn.addEventListener('click', () => showMessages(file));
-                titleTd.appendChild(msgBtn);
+                const countSpan = document.createElement('span');
+                countSpan.className = 'ms-1';
+                countSpan.textContent = file.message_count;
+                msgBtn.appendChild(countSpan);
             }
+            msgBtn.addEventListener('click', () => showMessages(file));
+            titleTd.appendChild(msgBtn);
         }
         tr.appendChild(titleTd);
 
