@@ -349,7 +349,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-info"><i class="bi bi-exclamation-triangle-fill me-2"></i><span id="manager-approval-message">Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.</span></div>
+        <div id="manager-approval-alert" class="alert alert-info d-none"><i class="bi bi-exclamation-triangle-fill me-2"></i><span id="manager-approval-message">Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.</span></div>
         <select id="share-expiry" class="form-select">
           <option value="1">1 gün</option>
           <option value="7" selected>7 gün</option>
@@ -1492,10 +1492,12 @@ publicShareBtn.addEventListener('click', () => {
         shareFileName = filename;
         const modal = new bootstrap.Modal(document.getElementById('shareLinkModal'));
         const msgEl = document.getElementById('manager-approval-message');
+        const msgAlert = document.getElementById('manager-approval-alert');
         if (managerName) {
             msgEl.textContent = `${managerName} onayı sonrası dosya paylaşıma açılacaktır.`;
+            msgAlert.classList.remove('d-none');
         } else {
-            msgEl.textContent = 'Bölüm amirinin onayı sonrası dosya paylaşıma açılacaktır.';
+            msgAlert.classList.add('d-none');
         }
         modal.show();
     }
