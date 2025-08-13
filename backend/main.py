@@ -1299,6 +1299,11 @@ def approve_share(token):
             link.username,
             f"'{link.filename}' paylaşımı onaylandı",
         )
+        log_activity(
+            link.username,
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından onaylandı",
+            "share_public_approve",
+        )
         return render_template("message.html", message="Paylaşım onaylandı")
     finally:
         db.close()
@@ -1319,6 +1324,11 @@ def reject_share(token):
         create_notification(
             link.username,
             f"'{link.filename}' paylaşımı reddedildi",
+        )
+        log_activity(
+            link.username,
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından reddedildi",
+            "share_public_reject",
         )
         return render_template("message.html", message="Paylaşım reddedildi")
     finally:
