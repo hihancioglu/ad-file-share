@@ -292,7 +292,10 @@
                 <button id="add-member-btn" class="btn btn-outline-secondary">Kullanıcı Ekle</button>
             </div>
             <h3>Dosyalar</h3>
-            <ul id="team-files-list" class="list-group text-start"></ul>
+            <table id="team-files-table" class="table text-start">
+                <thead><tr><th>Dosya</th><th>İşlemler</th></tr></thead>
+                <tbody></tbody>
+            </table>
         </section>
         <section id="activities" class="d-none">
             <h2>Aktiviteler</h2>
@@ -1769,7 +1772,8 @@ async function viewTeam(teamId) {
     document.getElementById('team-title').textContent = team.name;
     const membersList = document.getElementById('team-members-list');
     membersList.innerHTML = '';
-    team.members.forEach(m => {
+    const maxMembers = 5;
+    team.members.forEach((m, idx) => {
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
         const span = document.createElement('span');
@@ -1818,14 +1822,44 @@ async function viewTeam(teamId) {
             });
             li.appendChild(btn);
         }
+        if (idx >= maxMembers) {
+            li.classList.add('d-none', 'extra-member');
+        }
         membersList.appendChild(li);
     });
-    const filesList = document.getElementById('team-files-list');
-    filesList.innerHTML = '';
+    if (team.members.length > maxMembers) {
+        const toggleLi = document.createElement('li');
+        toggleLi.className = 'list-group-item text-center';
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn btn-sm btn-outline-secondary';
+        toggleBtn.textContent = 'Tümünü Göster';
+        toggleBtn.addEventListener('click', () => {
+            membersList.querySelectorAll('.extra-member').forEach(el => el.classList.toggle('d-none'));
+            toggleBtn.textContent = toggleBtn.textContent === 'Tümünü Göster' ? 'Daha Az Göster' : 'Tümünü Göster';
+        });
+        toggleLi.appendChild(toggleBtn);
+        membersList.appendChild(toggleLi);
+    }
+    const filesBody = document.querySelector('#team-files-table tbody');
+    filesBody.innerHTML = '';
     team.files.forEach(f => {
-        const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.innerHTML = `<span>${f.filename} (${f.username})</span>`;
+        const tr = document.createElement('tr');
+        const nameTd = document.createElement('td');
+        nameTd.textContent = `${f.filename} (${f.username})`;
+        tr.appendChild(nameTd);
+        const actTd = document.createElement('td');
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'btn btn-sm btn-outline-secondary me-2';
+        previewBtn.innerHTML = '<i class="bi bi-eye"></i>';
+        previewBtn.addEventListener('click', () => {
+            window.open(`/files/preview?username=${encodeURIComponent(f.username)}&filename=${encodeURIComponent(f.filename)}`, '_blank');
+        });
+        actTd.appendChild(previewBtn);
+        const dl = document.createElement('a');
+        dl.href = `/files/download?username=${encodeURIComponent(f.username)}&filename=${encodeURIComponent(f.filename)}`;
+        dl.className = 'btn btn-sm btn-outline-primary me-2';
+        dl.innerHTML = '<i class="bi bi-download"></i>';
+        actTd.appendChild(dl);
         if (adminMode || f.username === username || team.creator === username) {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-danger';
@@ -1838,9 +1872,10 @@ async function viewTeam(teamId) {
                 await fetch('/teams/delete_file', { method: 'POST', body: fd });
                 viewTeam(team.id);
             });
-            li.appendChild(btn);
+            actTd.appendChild(btn);
         }
-        filesList.appendChild(li);
+        tr.appendChild(actTd);
+        filesBody.appendChild(tr);
     });
     const container = document.getElementById('add-member-container');
     container.classList.toggle('d-none', team.creator !== username);
