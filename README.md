@@ -56,3 +56,19 @@ Run the app directly with:
 ```bash
 python backend/main.py
 ```
+
+## Desktop file box client
+
+A simple desktop client is provided in `desktop/file_box.py`. The program
+creates a personal "box" directory for each user and allows drag‑and‑drop
+sharing between them.
+
+Run it with:
+
+```bash
+python desktop/file_box.py --user alice
+```
+
+Dropping a file onto the window prompts for the recipient's username. The
+file is then copied into the recipient's box where it will appear in their
+own application window.
