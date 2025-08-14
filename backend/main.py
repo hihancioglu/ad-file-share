@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timedelta
 import mimetypes
 import zipfile
+import ipaddress
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -518,13 +519,28 @@ def get_country_from_ip(ip_address: str) -> str:
     return ""
 
 
+def get_client_ip() -> str:
+    """Extract the public IPv4 address from the current request."""
+    header = request.headers.get("X-Forwarded-For", "")
+    ips = [ip.strip() for ip in header.split(",") if ip.strip()]
+    if request.remote_addr:
+        ips.append(request.remote_addr)
+    for ip in ips:
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if ip_obj.version == 4 and not ip_obj.is_private:
+            return ip
+    return ips[0] if ips else ""
+
 def log_download(
     username: str,
     filename: str,
     downloader: str | None = None,
     token: str | None = None,
 ):
-    ip_addr = request.headers.get("X-Forwarded-For", request.remote_addr)
+    ip_addr = get_client_ip()
     country = get_country_from_ip(ip_addr) if ip_addr else ""
     db = SessionLocal()
     try:
