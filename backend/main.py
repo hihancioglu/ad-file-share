@@ -327,8 +327,7 @@ def manager_name_endpoint():
         return jsonify(manager="")
     _, _, manager_name = get_manager_info(user)
     if not manager_name:
-        admin_user = next(iter(ADMIN_USERS), None)
-        manager_name = get_full_name(admin_user) if admin_user else ""
+        return jsonify(manager="")
     return jsonify(manager=manager_name)
 
 
