@@ -1296,7 +1296,9 @@ def share_file():
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
     days = request.form.get("days")
-    purpose = request.form.get("purpose", "")
+    purpose = request.form.get("purpose", "").strip()
+    if not purpose:
+        return jsonify(success=False, error="Kullanım amacı gerekli")
     token = find_share_token(username, filename)
     if token is None:
         token = secrets.token_urlsafe(16)
