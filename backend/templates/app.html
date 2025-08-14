@@ -265,6 +265,7 @@
                         <th>Dosya</th>
                         <th>Gönderen</th>
                         <th>Geçerlilik</th>
+                        <th>Kullanım Amacı</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -371,6 +372,8 @@
           <option value="60">60 gün</option>
           <option value="0">Süresiz</option>
         </select>
+        <label class="form-label mt-3">Kullanım Amacı</label>
+        <input type="text" id="share-purpose" class="form-control">
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
@@ -1428,6 +1431,9 @@ async function loadPending() {
         const expTd = document.createElement('td');
         expTd.textContent = item.expires_at || 'Süresiz';
         tr.appendChild(expTd);
+        const purposeTd = document.createElement('td');
+        purposeTd.textContent = item.purpose || '';
+        tr.appendChild(purposeTd);
         const actTd = document.createElement('td');
         const approveBtn = document.createElement('button');
         approveBtn.className = 'btn btn-sm btn-success me-2';
@@ -1581,10 +1587,12 @@ publicShareBtn.addEventListener('click', () => {
 
 document.getElementById('share-confirm').addEventListener('click', async () => {
     const days = document.getElementById('share-expiry').value;
+    const purpose = document.getElementById('share-purpose').value;
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', shareFileName);
     formData.append('days', days);
+    formData.append('purpose', purpose);
     await fetch('/share', { method: 'POST', body: formData });
     bootstrap.Modal.getInstance(document.getElementById('shareLinkModal')).hide();
     await loadFiles();

@@ -348,6 +348,7 @@ def send_approval_email(
     approve_token: str,
     reject_token: str,
     approver_email: str,
+    purpose: str,
 ):
     manager_email = approver_email
     if not (
@@ -366,6 +367,7 @@ def send_approval_email(
         f"<p>Baylan Send Dosya Paylaşım Platformu</p>"
         f"<p>'{full_name}' kullanıcısı '{filename}' dosyasını herkese açık olarak paylaşmak istiyor.</p>"
         f"<p>Bu bağlantıya sahip olan 3. kişiler dosyayı indirebilir.</p>"
+        f"<p>Kullanım amacı: {purpose}</p>"
         f"<p>"
         f"<a href='{approval_link}' style='padding:10px 20px; background-color:#4CAF50; color:white; text-decoration:none;'>Onayla</a>"
         f"<a href='{reject_link}' style='padding:10px 20px; background-color:#f44336; color:white; text-decoration:none; margin-left:10px;'>Reddet</a>"
@@ -423,6 +425,7 @@ def create_share_link(
     approved: bool = False,
     approve_token: str | None = None,
     reject_token: str | None = None,
+    purpose: str = "",
 ):
     db = SessionLocal()
     try:
@@ -436,6 +439,7 @@ def create_share_link(
                 expires_at=expires_at,
                 approved=approved,
                 rejected=False,
+                purpose=purpose,
             )
         )
         db.commit()
@@ -1292,6 +1296,7 @@ def share_file():
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
     days = request.form.get("days")
+    purpose = request.form.get("purpose", "")
     token = find_share_token(username, filename)
     if token is None:
         token = secrets.token_urlsafe(16)
@@ -1329,6 +1334,7 @@ def share_file():
             approved=auto_approve,
             approve_token=approve_token,
             reject_token=reject_token,
+            purpose=purpose,
         )
         log_activity(
             username,
@@ -1347,6 +1353,7 @@ def share_file():
                 approve_token,
                 reject_token,
                 approver_email,
+                purpose,
             )
             if approver_user:
                 create_notification(
@@ -1440,6 +1447,7 @@ def pending_shares():
                         "username": link.username,
                         "filename": link.filename,
                         "expires_at": link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
+                        "purpose": link.purpose or "",
                     }
                 )
             else:
@@ -1455,6 +1463,7 @@ def pending_shares():
                             "username": link.username,
                             "filename": link.filename,
                             "expires_at": link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
+                            "purpose": link.purpose or "",
                         }
                     )
         return jsonify(shares=shares)

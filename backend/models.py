@@ -15,6 +15,7 @@ class ShareLink(Base):
     expires_at = Column(DateTime)
     approved = Column(Boolean, default=False)
     rejected = Column(Boolean, default=False)
+    purpose = Column(String, default="")
 
 
 class DownloadLog(Base):
