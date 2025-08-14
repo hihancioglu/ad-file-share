@@ -361,6 +361,7 @@ def send_approval_email(
         return
     approval_link = f"{PUBLIC_BASE_URL}/share/approve/{approve_token}"
     reject_link = f"{PUBLIC_BASE_URL}/share/reject/{reject_token}"
+    review_link = "https://send.baylan.local/#pending"
     subject = "Dosya Paylaşımı Onayı"
     full_name = get_full_name(username)
     body = (
@@ -368,8 +369,10 @@ def send_approval_email(
         f"<p>'{full_name}' kullanıcısı '{filename}' dosyasını herkese açık olarak paylaşmak istiyor.</p>"
         f"<p>Bu bağlantıya sahip olan 3. kişiler dosyayı indirebilir.</p>"
         f"<p>Kullanım amacı: {purpose}</p>"
+        f"<p>Fabrika içinden gönderilmek istenen dosyayı inceleyebilirsiniz.</p>"
         f"<p>"
-        f"<a href='{approval_link}' style='padding:10px 20px; background-color:#4CAF50; color:white; text-decoration:none;'>Onayla</a>"
+        f"<a href='{review_link}' style='padding:10px 20px; background-color:#0d6efd; color:white; text-decoration:none;'>İncele</a>"
+        f"<a href='{approval_link}' style='padding:10px 20px; background-color:#4CAF50; color:white; text-decoration:none; margin-left:10px;'>Onayla</a>"
         f"<a href='{reject_link}' style='padding:10px 20px; background-color:#f44336; color:white; text-decoration:none; margin-left:10px;'>Reddet</a>"
         f"</p>"
     )
