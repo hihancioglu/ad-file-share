@@ -299,11 +299,13 @@
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label for="activity-user-filter" class="form-label">Kullanıcı</label>
-                    <select id="activity-user-filter" class="form-select" multiple size="5"></select>
+                    <input id="activity-user-filter" class="form-control" list="activity-user-options">
+                    <datalist id="activity-user-options"></datalist>
                 </div>
                 <div class="col-md-6">
                     <label for="activity-category-filter" class="form-label">Kategori</label>
-                    <select id="activity-category-filter" class="form-select" multiple size="5"></select>
+                    <input id="activity-category-filter" class="form-control" list="activity-category-options">
+                    <datalist id="activity-category-options"></datalist>
                 </div>
             </div>
             <table id="activities-table" class="table text-start">
@@ -490,6 +492,8 @@ const isAdmin = localStorage.getItem('admin') === '1';
 const adminBtn = document.getElementById('admin-btn');
 const activityUserFilter = document.getElementById('activity-user-filter');
 const activityCategoryFilter = document.getElementById('activity-category-filter');
+const activityUserOptions = document.getElementById('activity-user-options');
+const activityCategoryOptions = document.getElementById('activity-category-options');
 const ADMIN_MODE_KEY = 'adminMode';
 const USER_STORAGE_KEY = 'selectedFiles';
 const ADMIN_STORAGE_KEY = 'adminSelectedFiles';
@@ -1465,34 +1469,40 @@ async function loadPending() {
 async function loadActivities() {
     const fd = new FormData();
     fd.append('username', username);
-    const selectedUsers = Array.from(activityUserFilter.selectedOptions).map(o => o.value);
-    if (selectedUsers.length > 0) {
-        fd.append('users', selectedUsers.join(','));
+    const selectedUser = activityUserFilter.value.trim();
+    if (selectedUser) {
+        fd.append('users', selectedUser);
     }
-    const selectedCats = Array.from(activityCategoryFilter.selectedOptions).map(o => o.value);
-    if (selectedCats.length > 0) {
-        fd.append('categories', selectedCats.join(','));
+    const selectedCat = activityCategoryFilter.value.trim();
+    if (selectedCat) {
+        fd.append('categories', selectedCat);
     }
     const res = await fetch('/activities', { method: 'POST', body: fd });
     const json = await res.json();
-    const prevUserSel = new Set(selectedUsers);
-    activityUserFilter.innerHTML = '';
+    const prevUserSel = selectedUser;
+    activityUserOptions.innerHTML = '';
     json.users.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u;
-        opt.textContent = u;
-        if (prevUserSel.has(u)) opt.selected = true;
-        activityUserFilter.appendChild(opt);
+        activityUserOptions.appendChild(opt);
     });
-    const prevCatSel = new Set(selectedCats);
-    activityCategoryFilter.innerHTML = '';
+    if (json.users.includes(prevUserSel)) {
+        activityUserFilter.value = prevUserSel;
+    } else {
+        activityUserFilter.value = '';
+    }
+    const prevCatSel = selectedCat;
+    activityCategoryOptions.innerHTML = '';
     json.categories.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c;
-        opt.textContent = c;
-        if (prevCatSel.has(c)) opt.selected = true;
-        activityCategoryFilter.appendChild(opt);
+        activityCategoryOptions.appendChild(opt);
     });
+    if (json.categories.includes(prevCatSel)) {
+        activityCategoryFilter.value = prevCatSel;
+    } else {
+        activityCategoryFilter.value = '';
+    }
     activities = json.activities;
     const tbody = document.querySelector('#activities-table tbody');
     tbody.innerHTML = '';
@@ -1503,8 +1513,8 @@ async function loadActivities() {
     });
 }
 
-activityUserFilter.addEventListener('change', loadActivities);
-activityCategoryFilter.addEventListener('change', loadActivities);
+activityUserFilter.addEventListener('input', loadActivities);
+activityCategoryFilter.addEventListener('input', loadActivities);
 
 deleteBtn.addEventListener('click', () => {
     const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
