@@ -1017,6 +1017,7 @@ function renderFiles() {
             f.public_expires_at,
             f.expires_in,
             f.public_expires_in,
+            f.remaining_downloads,
             f.extension,
             f.description,
             f.size,
@@ -1146,6 +1147,10 @@ function renderFiles() {
         let expText = '';
         if (file.link) {
             expText = file.public_expires_in || 'Süresiz';
+            if (file.max_downloads != null) {
+                const remaining = file.remaining_downloads ?? 0;
+                expText += `, ${remaining} indirme`;
+            }
         } else if (file.expires_in) {
             expText = file.expires_in;
         }
