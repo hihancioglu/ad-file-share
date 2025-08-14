@@ -2357,15 +2357,26 @@ def delete_notifications():
 @app.route("/activities", methods=["POST"])
 def activities():
     username = request.form.get("username")
-    category = request.form.get("category")
+    categories = request.form.get("categories")
+    users = request.form.get("users")
     db = SessionLocal()
     try:
-        query = db.query(Activity).order_by(Activity.created_at.desc())
-        if category:
-            query = query.filter_by(category=category)
+        base_query = db.query(Activity)
         if not is_admin(username):
-            query = query.filter_by(username=username)
-        acts = query.all()
+            base_query = base_query.filter_by(username=username)
+
+        all_acts = base_query.all()
+        cat_set = sorted({a.category for a in all_acts if a.category})
+        user_set = sorted({a.username for a in all_acts})
+
+        if categories:
+            cat_list = [c for c in categories.split(",") if c]
+            base_query = base_query.filter(Activity.category.in_(cat_list))
+        if users and is_admin(username):
+            user_list = [u for u in users.split(",") if u]
+            base_query = base_query.filter(Activity.username.in_(user_list))
+
+        acts = base_query.order_by(Activity.created_at.desc()).all()
         data = []
         for a in acts:
             msg = a.message
@@ -2380,7 +2391,7 @@ def activities():
                     "created_at": a.created_at.strftime("%d/%m/%Y %H:%M"),
                 }
             )
-        return jsonify(activities=data)
+        return jsonify(activities=data, categories=cat_set, users=user_set)
     finally:
         db.close()
 
