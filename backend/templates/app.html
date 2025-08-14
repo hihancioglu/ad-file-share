@@ -665,7 +665,7 @@ function autoFitColumn(table, index) {
         const prevWhiteSpace = cell.style.whiteSpace;
         const prevWidth = cell.style.width;
         cell.style.whiteSpace = 'nowrap';
-        cell.style.width = 'auto';
+        cell.style.width = '';
         const width = cell.scrollWidth;
         cell.style.whiteSpace = prevWhiteSpace;
         cell.style.width = prevWidth;
