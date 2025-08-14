@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timedelta
 import mimetypes
 import zipfile
+import re
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -218,13 +219,29 @@ def create_notification(username: str, message: str, team_id=None):
 def log_activity(usernames, message: str, category: str = "general"):
     if isinstance(usernames, str):
         usernames = [usernames]
+
+    # Replace any username tokens in the message with full names
+    def repl(match):
+        uname = match.group(1)
+        suffix = match.group(2)
+        return f"{get_full_name(uname)} kullanıc{suffix}"
+
+    processed_msg = re.sub(
+        r"(\S+) kullanıc(ısı|ısına|ısından|ısının)",
+        repl,
+        message,
+    )
+
     db = SessionLocal()
     try:
         for u in usernames:
-            msg = message
-            prefix = f"{u} kullanıcısı "
-            if msg.startswith(prefix):
-                msg = msg[len(prefix):]
+            msg = processed_msg
+            full_name = get_full_name(u)
+            prefixes = [f"{u} kullanıcısı ", f"{full_name} kullanıcısı "]
+            for prefix in prefixes:
+                if msg.startswith(prefix):
+                    msg = msg[len(prefix):]
+                    break
             db.add(Activity(username=u, message=msg, category=category))
         db.commit()
     finally:
@@ -1426,9 +1443,11 @@ def reject_share(token):
             link.username,
             f"'{link.filename}' paylaşımı reddedildi",
         )
+        _, _, manager_name = get_manager_info(link.username)
+        approver = manager_name or "bölüm amiri"
         log_activity(
             link.username,
-            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından reddedildi",
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver} tarafından reddedildi",
             "share_public_reject",
         )
         return render_template("message.html", message="Paylaşım reddedildi")
@@ -2396,9 +2415,12 @@ def activities():
         data = []
         for a in acts:
             msg = a.message
-            prefix = f"{a.username} kullanıcısı "
-            if msg.startswith(prefix):
-                msg = msg[len(prefix):]
+            full_name = get_full_name(a.username)
+            prefixes = [f"{a.username} kullanıcısı ", f"{full_name} kullanıcısı "]
+            for prefix in prefixes:
+                if msg.startswith(prefix):
+                    msg = msg[len(prefix):]
+                    break
             data.append(
                 {
                     "username": a.username,
