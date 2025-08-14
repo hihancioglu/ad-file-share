@@ -373,7 +373,7 @@
           <option value="0">Süresiz</option>
         </select>
         <label class="form-label mt-3">Kullanım Amacı</label>
-        <input type="text" id="share-purpose" class="form-control">
+        <input type="text" id="share-purpose" class="form-control" required>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
@@ -1587,7 +1587,12 @@ publicShareBtn.addEventListener('click', () => {
 
 document.getElementById('share-confirm').addEventListener('click', async () => {
     const days = document.getElementById('share-expiry').value;
-    const purpose = document.getElementById('share-purpose').value;
+    const purposeInput = document.getElementById('share-purpose');
+    const purpose = purposeInput.value.trim();
+    if (!purpose) {
+        purposeInput.reportValidity();
+        return;
+    }
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', shareFileName);
