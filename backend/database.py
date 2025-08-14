@@ -52,6 +52,9 @@ def add_missing_columns():
             conn.execute(
                 text("ALTER TABLE share_links ADD COLUMN reject_token VARCHAR")
             )
+    if "purpose" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE share_links ADD COLUMN purpose VARCHAR"))
 
     member_cols = [col["name"] for col in inspector.get_columns("team_members")]
     if "accepted" not in member_cols:
