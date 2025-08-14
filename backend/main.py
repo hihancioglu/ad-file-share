@@ -349,6 +349,7 @@ def send_approval_email(
     reject_token: str,
     approver_email: str,
     purpose: str,
+    max_downloads: int | None = None,
 ):
     manager_email = approver_email
     if not (
@@ -369,6 +370,10 @@ def send_approval_email(
         f"<p>'{full_name}' kullanıcısı '{filename}' dosyasını herkese açık olarak paylaşmak istiyor.</p>"
         f"<p>Bu bağlantıya sahip olan 3. kişiler dosyayı indirebilir.</p>"
         f"<p>Kullanım amacı: {purpose}</p>"
+    )
+    if max_downloads:
+        body += f"<p>İzin verilen maksimum indirme sayısı: {max_downloads}</p>"
+    body += (
         f"<p>Fabrika içinden gönderilmek istenen dosyayı inceleyebilirsiniz.</p>"
         f"<p>"
         f"<a href='{review_link}' style='padding:10px 20px; background-color:#0d6efd; color:white; text-decoration:none;'>İncele</a>"
@@ -429,6 +434,7 @@ def create_share_link(
     approve_token: str | None = None,
     reject_token: str | None = None,
     purpose: str = "",
+    max_downloads: int | None = None,
 ):
     db = SessionLocal()
     try:
@@ -443,6 +449,7 @@ def create_share_link(
                 approved=approved,
                 rejected=False,
                 purpose=purpose,
+                max_downloads=max_downloads,
             )
         )
         db.commit()
@@ -511,7 +518,12 @@ def get_country_from_ip(ip_address: str) -> str:
     return ""
 
 
-def log_download(username: str, filename: str, downloader: str | None = None):
+def log_download(
+    username: str,
+    filename: str,
+    downloader: str | None = None,
+    token: str | None = None,
+):
     ip_addr = request.headers.get("X-Forwarded-For", request.remote_addr)
     country = get_country_from_ip(ip_addr) if ip_addr else ""
     db = SessionLocal()
@@ -522,8 +534,15 @@ def log_download(username: str, filename: str, downloader: str | None = None):
                 filename=filename,
                 ip_address=ip_addr,
                 country=country,
+                token=token,
             )
         )
+        if token:
+            link = db.query(ShareLink).filter_by(token=token).first()
+            if link:
+                link.download_count = (link.download_count or 0) + 1
+                if link.max_downloads and link.download_count >= link.max_downloads:
+                    db.delete(link)
         db.commit()
     finally:
         db.close()
@@ -1324,6 +1343,7 @@ def share_file():
         return jsonify(success=False, error="Dosya bulunamadı")
     days = request.form.get("days")
     purpose = request.form.get("purpose", "").strip()
+    max_downloads = request.form.get("max_downloads")
     if not purpose:
         return jsonify(success=False, error="Kullanım amacı gerekli")
     token = find_share_token(username, filename)
@@ -1355,6 +1375,7 @@ def share_file():
         if not auto_approve:
             approve_token = secrets.token_urlsafe(16)
             reject_token = secrets.token_urlsafe(16)
+        max_dl = int(max_downloads) if max_downloads and int(max_downloads) > 0 else None
         create_share_link(
             token,
             username,
@@ -1364,6 +1385,7 @@ def share_file():
             approve_token=approve_token,
             reject_token=reject_token,
             purpose=purpose,
+            max_downloads=max_dl,
         )
         log_activity(
             username,
@@ -1383,6 +1405,7 @@ def share_file():
                 reject_token,
                 approver_email,
                 purpose,
+                max_dl,
             )
             if approver_user:
                 create_notification(
@@ -1519,7 +1542,9 @@ def preview_file(token):
                     return jsonify(files=zf.namelist())
             return jsonify(files=[])
         if request.args.get("download") == "1":
-            log_download(link.username, link.filename, session.get("username"))
+            log_download(
+                link.username, link.filename, session.get("username"), token
+            )
             return send_file(
                 file_path,
                 as_attachment=True,
@@ -1773,6 +1798,18 @@ def public_page(token):
         return render_template("public.html", error="Bağlantı reddedildi.")
     if not link.approved:
         return render_template("public.html", error="Bağlantı onay bekliyor.")
+    if link.max_downloads and link.download_count >= link.max_downloads:
+        db = SessionLocal()
+        try:
+            link_db = db.query(ShareLink).filter_by(token=token).first()
+            if link_db:
+                db.delete(link_db)
+                db.commit()
+        finally:
+            db.close()
+        return render_template(
+            "public.html", error="Bağlantı için izin verilen maksimum indirme sayısına ulaşıldı."
+        )
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
@@ -1816,13 +1853,25 @@ def public_download_file(token):
         return render_template("public.html", error="Bağlantı reddedildi.")
     if not link.approved:
         return render_template("public.html", error="Bağlantı onay bekliyor.")
+    if link.max_downloads and link.download_count >= link.max_downloads:
+        db = SessionLocal()
+        try:
+            link_db = db.query(ShareLink).filter_by(token=token).first()
+            if link_db:
+                db.delete(link_db)
+                db.commit()
+        finally:
+            db.close()
+        return render_template(
+            "public.html", error="Bağlantı için izin verilen maksimum indirme sayısına ulaşıldı."
+        )
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
-    log_download(username, filename, session.get("username"))
+    log_download(username, filename, session.get("username"), token)
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 

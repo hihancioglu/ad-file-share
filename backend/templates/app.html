@@ -378,11 +378,13 @@
         </select>
         <label class="form-label mt-3">Kullanım Amacı</label>
         <input type="text" id="share-purpose" class="form-control" required>
+        <label class="form-label mt-3">Maksimum İndirme Sayısı</label>
+        <input type="number" id="share-max-downloads" class="form-control" min="1" placeholder="Opsiyonel">
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
       </div>
-</div>
+    </div>
 </div>
 </div>
 
@@ -1607,6 +1609,7 @@ publicShareBtn.addEventListener('click', () => {
         } else {
             msgAlert.classList.add('d-none');
         }
+        document.getElementById('share-max-downloads').value = '';
         modal.show();
     }
 });
@@ -1619,11 +1622,15 @@ document.getElementById('share-confirm').addEventListener('click', async () => {
         purposeInput.reportValidity();
         return;
     }
+    const maxDownloads = document.getElementById('share-max-downloads').value;
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', shareFileName);
     formData.append('days', days);
     formData.append('purpose', purpose);
+    if (maxDownloads) {
+        formData.append('max_downloads', maxDownloads);
+    }
     await fetch('/share', { method: 'POST', body: formData });
     bootstrap.Modal.getInstance(document.getElementById('shareLinkModal')).hide();
     await loadFiles();

@@ -55,6 +55,18 @@ def add_missing_columns():
     if "purpose" not in share_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE share_links ADD COLUMN purpose VARCHAR"))
+    if "max_downloads" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE share_links ADD COLUMN max_downloads INTEGER")
+            )
+    if "download_count" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE share_links ADD COLUMN download_count INTEGER DEFAULT 0"
+                )
+            )
 
     member_cols = [col["name"] for col in inspector.get_columns("team_members")]
     if "accepted" not in member_cols:
@@ -75,6 +87,11 @@ def add_missing_columns():
         with engine.begin() as conn:
             conn.execute(
                 text("ALTER TABLE download_logs ADD COLUMN country VARCHAR")
+            )
+    if "token" not in download_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE download_logs ADD COLUMN token VARCHAR")
             )
 
     userfile_cols = [col["name"] for col in inspector.get_columns("user_files")]
