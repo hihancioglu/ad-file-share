@@ -87,6 +87,7 @@ class UserShare(Base):
     recipient = Column(String, index=True)
     filename = Column(String)
     expires_at = Column(DateTime)
+    deleted_at = Column(DateTime)
 
 
 class UserFile(Base):

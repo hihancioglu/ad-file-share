@@ -218,6 +218,7 @@
                         <th>Dosya</th>
                         <th>Gönderen</th>
                         <th>Geçerlilik</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -1281,14 +1282,36 @@ async function loadIncoming() {
     json.files.forEach(file => {
         const tr = document.createElement('tr');
         const nameTd = document.createElement('td');
-        nameTd.textContent = file.filename;
+        const dl = document.createElement('a');
+        dl.href = `/files/download?username=${encodeURIComponent(file.sender_id)}&filename=${encodeURIComponent(file.filename)}`;
+        dl.textContent = file.filename;
+        nameTd.appendChild(dl);
         tr.appendChild(nameTd);
         const senderTd = document.createElement('td');
         senderTd.textContent = file.sender;
         tr.appendChild(senderTd);
-       const expTd = document.createElement('td');
+        const expTd = document.createElement('td');
         expTd.textContent = file.expires_at || 'Süresiz';
         tr.appendChild(expTd);
+        const actTd = document.createElement('td');
+        const dlBtn = document.createElement('a');
+        dlBtn.href = `/files/download?username=${encodeURIComponent(file.sender_id)}&filename=${encodeURIComponent(file.filename)}`;
+        dlBtn.className = 'btn btn-sm btn-secondary me-2';
+        dlBtn.innerHTML = '<i class="bi bi-download"></i>';
+        actTd.appendChild(dlBtn);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger';
+        delBtn.textContent = 'Sil';
+        delBtn.addEventListener('click', async () => {
+            const data = new FormData();
+            data.append('username', username);
+            data.append('sender', file.sender_id);
+            data.append('filename', file.filename);
+            await fetch('/incoming/delete', { method: 'POST', body: data });
+            loadIncoming();
+        });
+        actTd.appendChild(delBtn);
+        tr.appendChild(actTd);
         tbody.appendChild(tr);
     });
 }
