@@ -1034,6 +1034,30 @@ def download_file():
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
+@app.route("/files/preview")
+def preview_user_file():
+    username = request.args.get("username")
+    filename = request.args.get("filename")
+    user_dir = os.path.join(DATA_DIR, username)
+    file_path = os.path.join(user_dir, filename)
+    if not os.path.exists(file_path):
+        return "", 404
+    return send_file(file_path)
+
+
+@app.route("/files/download")
+def direct_download_file():
+    cleanup_expired_files()
+    username = request.args.get("username")
+    filename = request.args.get("filename")
+    user_dir = os.path.join(DATA_DIR, username)
+    file_path = os.path.join(user_dir, filename)
+    if not os.path.exists(file_path):
+        return "", 404
+    log_download(username, filename, session.get("username"))
+    return send_file(file_path, as_attachment=True, download_name=filename)
+
+
 @app.route("/public/<token>/message", methods=["POST"])
 def public_message(token):
     sender = request.form.get("sender", "")
