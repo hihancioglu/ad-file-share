@@ -240,7 +240,10 @@
         </section>
 
         <section id="trash" class="d-none">
-            <h2>Çöp Kutusu</h2>
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>Çöp Kutusu</h2>
+                <button id="empty-trash-btn" class="btn btn-sm btn-danger">Çöpü Boşalt</button>
+            </div>
             <table id="trash-table" class="table table-bordered table-striped shadow text-start">
                 <thead>
                     <tr id="trash-header-row">
@@ -515,6 +518,18 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
     localStorage.removeItem('adminMode');
     localStorage.removeItem('admin');
     window.location.href = '/login';
+});
+document.getElementById('empty-trash-btn').addEventListener('click', async () => {
+    if (!confirm('Çöp kutusundaki tüm dosyalar kalıcı olarak silinecek. Emin misiniz?')) {
+        return;
+    }
+    const fd = new FormData();
+    fd.append('username', username);
+    if (adminMode) {
+        fd.append('admin', '1');
+    }
+    await fetch('/trash/empty', { method: 'POST', body: fd });
+    loadTrash();
 });
 const deleteBtn = document.getElementById('delete-selected');
 const editBtn = document.getElementById('edit-selected');
