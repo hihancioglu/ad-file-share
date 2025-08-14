@@ -318,6 +318,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <input type="text" id="user-search" class="form-control mb-2" placeholder="Ara...">
         <div id="ou-tree"></div>
       </div>
       <div class="modal-footer">
@@ -539,6 +540,7 @@ const publicShareBtn = document.getElementById('public-share');
 const searchInput = document.getElementById('file-search');
 const pageSizeSelect = document.getElementById('page-size');
 const pagination = document.getElementById('file-pagination');
+const userSearch = document.getElementById('user-search');
 const PAGE_KEY = 'filesCurrentPage';
 let currentPage = parseInt(localStorage.getItem(PAGE_KEY), 10) || 1;
 function setCurrentPage(page) {
@@ -602,6 +604,24 @@ searchInput.addEventListener('input', () => {
 pageSizeSelect.addEventListener('change', () => {
     setCurrentPage(1);
     renderFiles();
+});
+
+userSearch.addEventListener('input', () => {
+    const term = userSearch.value.trim().toLowerCase();
+    document.querySelectorAll('#ou-tree input.user-checkbox').forEach(cb => {
+        const li = cb.parentElement;
+        const name = cb.dataset.name.toLowerCase();
+        li.style.display = !term || name.includes(term) ? '' : 'none';
+    });
+    document.querySelectorAll('#ou-tree details').forEach(details => {
+        const hasVisible = Array.from(details.querySelectorAll('input.user-checkbox'))
+            .some(cb => cb.parentElement.style.display !== 'none');
+        details.style.display = hasVisible ? '' : 'none';
+        details.parentElement.style.display = hasVisible ? '' : 'none';
+        if (term && hasVisible) {
+            details.open = true;
+        }
+    });
 });
 
 const sortableHeaders = document.querySelectorAll('#file-table thead th[data-field]');
@@ -1553,6 +1573,8 @@ shareBtn.addEventListener('click', async () => {
     const container = document.getElementById('ou-tree');
     container.innerHTML = '';
     renderTree(json.tree, container, username);
+    userSearch.value = '';
+    userSearch.dispatchEvent(new Event('input'));
     const modal = new bootstrap.Modal(document.getElementById('userModal'));
     modal.show();
 });
@@ -1860,6 +1882,8 @@ document.getElementById('load-users').addEventListener('click', async () => {
     const container = document.getElementById('ou-tree');
     container.innerHTML = '';
     renderTree(json.tree, container, username);
+    userSearch.value = '';
+    userSearch.dispatchEvent(new Event('input'));
     const modal = new bootstrap.Modal(document.getElementById('userModal'));
     modal.show();
 });
@@ -1871,6 +1895,8 @@ document.getElementById('add-member-btn').addEventListener('click', async () => 
     const container = document.getElementById('ou-tree');
     container.innerHTML = '';
     renderTree(json.tree, container, username);
+    userSearch.value = '';
+    userSearch.dispatchEvent(new Event('input'));
     const modal = new bootstrap.Modal(document.getElementById('userModal'));
     modal.show();
 });
