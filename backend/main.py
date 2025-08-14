@@ -1398,9 +1398,11 @@ def approve_share(token):
             link.username,
             f"'{link.filename}' paylaşımı onaylandı",
         )
+        _, _, manager_name = get_manager_info(link.username)
+        approver = manager_name or "bölüm amiri"
         log_activity(
             link.username,
-            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından onaylandı",
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver} tarafından onaylandı",
             "share_public_approve",
         )
         return render_template("message.html", message="Paylaşım onaylandı")
