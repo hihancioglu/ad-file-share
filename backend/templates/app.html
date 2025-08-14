@@ -295,6 +295,16 @@
         </section>
         <section id="activities" class="d-none">
             <h2>Aktiviteler</h2>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label for="activity-user-filter" class="form-label">Kullanıcı</label>
+                    <select id="activity-user-filter" class="form-select" multiple size="5"></select>
+                </div>
+                <div class="col-md-6">
+                    <label for="activity-category-filter" class="form-label">Kategori</label>
+                    <select id="activity-category-filter" class="form-select" multiple size="5"></select>
+                </div>
+            </div>
             <table id="activities-table" class="table text-start">
                 <thead>
                     <tr>
@@ -475,6 +485,8 @@ window.fetch = (url, options = {}) => {
 
 const isAdmin = localStorage.getItem('admin') === '1';
 const adminBtn = document.getElementById('admin-btn');
+const activityUserFilter = document.getElementById('activity-user-filter');
+const activityCategoryFilter = document.getElementById('activity-category-filter');
 const ADMIN_MODE_KEY = 'adminMode';
 const USER_STORAGE_KEY = 'selectedFiles';
 const ADMIN_STORAGE_KEY = 'adminSelectedFiles';
@@ -1447,8 +1459,34 @@ async function loadPending() {
 async function loadActivities() {
     const fd = new FormData();
     fd.append('username', username);
+    const selectedUsers = Array.from(activityUserFilter.selectedOptions).map(o => o.value);
+    if (selectedUsers.length > 0) {
+        fd.append('users', selectedUsers.join(','));
+    }
+    const selectedCats = Array.from(activityCategoryFilter.selectedOptions).map(o => o.value);
+    if (selectedCats.length > 0) {
+        fd.append('categories', selectedCats.join(','));
+    }
     const res = await fetch('/activities', { method: 'POST', body: fd });
     const json = await res.json();
+    const prevUserSel = new Set(selectedUsers);
+    activityUserFilter.innerHTML = '';
+    json.users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        if (prevUserSel.has(u)) opt.selected = true;
+        activityUserFilter.appendChild(opt);
+    });
+    const prevCatSel = new Set(selectedCats);
+    activityCategoryFilter.innerHTML = '';
+    json.categories.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        if (prevCatSel.has(c)) opt.selected = true;
+        activityCategoryFilter.appendChild(opt);
+    });
     activities = json.activities;
     const tbody = document.querySelector('#activities-table tbody');
     tbody.innerHTML = '';
@@ -1458,6 +1496,9 @@ async function loadActivities() {
         tbody.appendChild(tr);
     });
 }
+
+activityUserFilter.addEventListener('change', loadActivities);
+activityCategoryFilter.addEventListener('change', loadActivities);
 
 deleteBtn.addEventListener('click', () => {
     const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
