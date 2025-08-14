@@ -16,6 +16,8 @@ class ShareLink(Base):
     approved = Column(Boolean, default=False)
     rejected = Column(Boolean, default=False)
     purpose = Column(String, default="")
+    max_downloads = Column(Integer, nullable=True)
+    download_count = Column(Integer, default=0)
 
 
 class DownloadLog(Base):
@@ -27,6 +29,7 @@ class DownloadLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     ip_address = Column(String)
     country = Column(String)
+    token = Column(String, index=True, nullable=True)
 
 
 class Team(Base):
