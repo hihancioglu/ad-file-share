@@ -876,6 +876,8 @@ def list_files():
                     "expires_at": l.expires_at,
                     "approved": l.approved,
                     "rejected": l.rejected,
+                    "max_downloads": l.max_downloads,
+                    "download_count": l.download_count or 0,
                 }
                 for l in db.query(ShareLink)
                 .filter_by(username=username)
@@ -914,6 +916,11 @@ def list_files():
             link_exp = link_info.get("expires_at")
             approved = link_info.get("approved", False)
             rejected = link_info.get("rejected", False)
+            max_dl = link_info.get("max_downloads")
+            link_dl_count = link_info.get("download_count", 0)
+            remaining_dl = (
+                max(max_dl - link_dl_count, 0) if max_dl is not None else None
+            )
             mgr_name = manager_name if token and not approved else ""
             files.append(
                 {
@@ -938,6 +945,8 @@ def list_files():
                     "manager_name": mgr_name,
                     "download_count": counts.get(filename, 0),
                     "message_count": msg_counts.get(filename, 0),
+                    "max_downloads": max_dl,
+                    "remaining_downloads": remaining_dl,
                 }
             )
         files.sort(key=lambda f: f["added"], reverse=True)
@@ -958,6 +967,8 @@ def list_files():
                 "expires_at": l.expires_at,
                 "approved": l.approved,
                 "rejected": l.rejected,
+                "max_downloads": l.max_downloads,
+                "download_count": l.download_count or 0,
             }
             for l in db.query(ShareLink)
             .filter(ShareLink.rejected == False)
@@ -1009,6 +1020,11 @@ def list_files():
             link_exp = link_info.get("expires_at")
             approved = link_info.get("approved", False)
             rejected = link_info.get("rejected", False)
+            max_dl = link_info.get("max_downloads")
+            link_dl_count = link_info.get("download_count", 0)
+            remaining_dl = (
+                max(max_dl - link_dl_count, 0) if max_dl is not None else None
+            )
             mgr_name = manager_name if token and not approved else ""
             files.append(
                 {
@@ -1034,6 +1050,8 @@ def list_files():
                     "manager_name": mgr_name,
                     "download_count": counts.get((user, filename), 0),
                     "message_count": msg_counts.get((user, filename), 0),
+                    "max_downloads": max_dl,
+                    "remaining_downloads": remaining_dl,
                 }
             )
     files.sort(key=lambda f: f["added"], reverse=True)
