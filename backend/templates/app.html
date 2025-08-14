@@ -299,7 +299,8 @@
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label for="activity-user-filter" class="form-label">Kullanıcı</label>
-                    <select id="activity-user-filter" class="form-select"></select>
+                    <input id="activity-user-filter" class="form-control" list="activity-user-options" />
+                    <datalist id="activity-user-options"></datalist>
                 </div>
                 <div class="col-md-6">
                     <label for="activity-category-filter" class="form-label">Kategori</label>
@@ -489,6 +490,7 @@ window.fetch = (url, options = {}) => {
 const isAdmin = localStorage.getItem('admin') === '1';
 const adminBtn = document.getElementById('admin-btn');
 const activityUserFilter = document.getElementById('activity-user-filter');
+const activityUserOptions = document.getElementById('activity-user-options');
 const activityCategoryFilter = document.getElementById('activity-category-filter');
 const ADMIN_MODE_KEY = 'adminMode';
 const USER_STORAGE_KEY = 'selectedFiles';
@@ -1476,18 +1478,13 @@ async function loadActivities() {
     const res = await fetch('/activities', { method: 'POST', body: fd });
     const json = await res.json();
     const prevUserSel = selectedUser;
-    activityUserFilter.innerHTML = '<option value=""></option>';
+    activityUserOptions.innerHTML = '';
     json.users.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u;
-        opt.textContent = u;
-        activityUserFilter.appendChild(opt);
+        activityUserOptions.appendChild(opt);
     });
-    if (json.users.includes(prevUserSel)) {
-        activityUserFilter.value = prevUserSel;
-    } else {
-        activityUserFilter.value = '';
-    }
+    activityUserFilter.value = prevUserSel;
     const prevCatSel = selectedCat;
     activityCategoryFilter.innerHTML = '<option value=""></option>';
     json.categories.forEach(c => {
@@ -1511,7 +1508,7 @@ async function loadActivities() {
     });
 }
 
-activityUserFilter.addEventListener('change', loadActivities);
+activityUserFilter.addEventListener('input', loadActivities);
 activityCategoryFilter.addEventListener('change', loadActivities);
 
 deleteBtn.addEventListener('click', () => {
