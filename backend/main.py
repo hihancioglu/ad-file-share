@@ -1622,18 +1622,46 @@ def incoming_files():
         shares = db.query(UserShare).filter_by(recipient=username).all()
         files = []
         for s in shares:
+            if s.deleted_at:
+                continue
             if s.expires_at and s.expires_at < now:
                 continue
             files.append(
                 {
                     "filename": s.filename,
                     "sender": get_full_name(s.sender),
+                    "sender_id": s.sender,
                     "expires_at": s.expires_at.strftime("%d/%m/%Y")
                     if s.expires_at
                     else "",
                 }
             )
         return jsonify(files=files)
+    finally:
+        db.close()
+
+
+@app.route("/incoming/delete", methods=["POST"])
+def delete_incoming():
+    username = request.form.get("username")
+    sender = request.form.get("sender")
+    filename = request.form.get("filename")
+    db = SessionLocal()
+    try:
+        share = (
+            db.query(UserShare)
+            .filter_by(sender=sender, recipient=username, filename=filename)
+            .first()
+        )
+        if share:
+            share.deleted_at = datetime.utcnow()
+            db.commit()
+            log_activity(
+                [sender, username],
+                f"{username} kullanıcısı {sender} kullanıcısından gelen '{filename}' dosyasını sildi",
+                "share_user_delete",
+            )
+        return jsonify(success=True)
     finally:
         db.close()
 
