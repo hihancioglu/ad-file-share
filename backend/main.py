@@ -1193,6 +1193,33 @@ def list_trash():
         db.close()
 
 
+@app.route("/trash/empty", methods=["POST"])
+def empty_trash():
+    username = request.form.get("username")
+    admin_mode = request.form.get("admin") and is_admin(username)
+    db = SessionLocal()
+    try:
+        query = db.query(UserFile).filter(UserFile.deleted_at != None)
+        if not admin_mode:
+            query = query.filter_by(username=username)
+        metas = query.all()
+        for meta in metas:
+            trash_path = os.path.join(DATA_DIR, "_trash", meta.username, meta.filename)
+            if os.path.exists(trash_path):
+                os.remove(trash_path)
+            db.query(ShareLink).filter_by(
+                username=meta.username, filename=meta.filename
+            ).delete()
+            db.delete(meta)
+        db.commit()
+    finally:
+        db.close()
+    log_activity(
+        username, f"{username} kullanıcısı çöp kutusunu boşalttı", "empty_trash"
+    )
+    return jsonify(success=True)
+
+
 @app.route("/trash/restore", methods=["POST"])
 def restore_file():
     username = request.form.get("username")
