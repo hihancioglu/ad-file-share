@@ -366,22 +366,34 @@ def send_approval_email(
     review_link = "https://send.baylan.local/#pending"
     subject = "Dosya Paylaşımı Onayı"
     full_name = get_full_name(username)
-    body = (
-        f"<p>Baylan Send Dosya Paylaşım Platformu</p>"
-        f"<p>'{full_name}' kullanıcısı '{filename}' dosyasını herkese açık olarak paylaşmak istiyor.</p>"
-        f"<p>Bu bağlantıya sahip olan 3. kişiler dosyayı indirebilir.</p>"
-        f"<p>Kullanım amacı: {purpose}</p>"
-    )
+
+    details = [
+        f"<li><strong>Gönderen:</strong> {full_name}</li>",
+        f"<li><strong>Dosya Adı:</strong> {filename}</li>",
+        "<li><strong>Paylaşım Türü:</strong> Herkese açık – bağlantıya sahip herkes indirebilir</li>",
+        f"<li><strong>Kullanım amacı:</strong> {purpose}</li>",
+    ]
     if max_downloads:
-        body += f"<p>İzin verilen maksimum indirme sayısı: {max_downloads}</p>"
-    body += (
-        f"<p>Fabrika içinden gönderilmek istenen dosyayı inceleyebilirsiniz.</p>"
-        f"<p>"
-        f"<a href='{review_link}' style='padding:10px 20px; background-color:#0d6efd; color:white; text-decoration:none;'>İncele</a>"
-        f"<a href='{approval_link}' style='padding:10px 20px; background-color:#4CAF50; color:white; text-decoration:none; margin-left:10px;'>Onayla</a>"
-        f"<a href='{reject_link}' style='padding:10px 20px; background-color:#f44336; color:white; text-decoration:none; margin-left:10px;'>Reddet</a>"
-        f"</p>"
-    )
+        details.append(
+            f"<li><strong>İzin verilen maksimum indirme sayısı:</strong> {max_downloads}</li>"
+        )
+    details_html = "".join(details)
+    body = f"""
+<div style="font-family: Arial, sans-serif; line-height:1.6;">
+  <p>Merhaba,</p>
+  <p>Baylan Send platformu üzerinden bir dosya paylaşımı yapıldı:</p>
+  <ul style="list-style:none; padding-left:0;">
+    {details_html}
+  </ul>
+  <p>Fabrika içinden gönderilmek istenen dosyayı inceleyebilirsiniz.</p>
+  <p>
+    <a href="{review_link}" style="padding:10px 16px;background-color:#0d6efd;color:#fff;text-decoration:none;border-radius:4px;">İncele</a>
+    <a href="{approval_link}" style="padding:10px 16px;background-color:#4CAF50;color:#fff;text-decoration:none;border-radius:4px;margin-left:10px;">Onayla</a>
+    <a href="{reject_link}" style="padding:10px 16px;background-color:#f44336;color:#fff;text-decoration:none;border-radius:4px;margin-left:10px;">Reddet</a>
+  </p>
+  <p>Baylan Send’i kullandığınız için teşekkür ederiz.<br/>İyi çalışmalar!</p>
+</div>
+""".strip()
     authority = f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}"
     app = msal.ConfidentialClientApplication(
         GRAPH_CLIENT_ID, authority=authority, client_credential=GRAPH_CLIENT_SECRET
