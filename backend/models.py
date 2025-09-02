@@ -104,6 +104,19 @@ class UserFile(Base):
     deleted_at = Column(DateTime)
 
 
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("user_files.id"), index=True)
+    version = Column(String, index=True)
+    path = Column(String)
+    size = Column(Integer)
+    content_type = Column(String)
+    note = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class FileMessage(Base):
     __tablename__ = "file_messages"
 

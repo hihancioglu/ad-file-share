@@ -57,6 +57,7 @@ from models import (
     UserShare,
     UserFile,
     FileMessage,
+    DocumentVersion,
 )
 from sqlalchemy import func
 
@@ -108,6 +109,24 @@ def get_unique_filename(directory: str, filename: str) -> str:
 
 # Track in-progress uploads to handle name collisions for chunked uploads
 current_uploads = {}
+
+
+def get_next_version(db, document_id):
+    versions = (
+        db.query(DocumentVersion.version)
+        .filter(DocumentVersion.document_id == document_id)
+        .all()
+    )
+    major, minor = 1, 0
+    for (version,) in versions:
+        try:
+            maj, min_ = map(int, version.split("."))
+            if (maj, min_) > (major, minor):
+                major, minor = maj, min_
+        except ValueError:
+            continue
+    auto_minor = minor + 1
+    return major, auto_minor
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -2590,43 +2609,46 @@ def upload_document_version(doc_id):
     if not file:
         return jsonify({"error": "No file provided"}), 400
 
+    ext = os.path.splitext(file.filename)[1]
+    prefix = f"documents/{doc_id}/versions/"
+
     db = SessionLocal()
     try:
         document = db.query(UserFile).filter_by(id=doc_id).first()
         if not document:
             return jsonify({"error": "Document not found"}), 404
+
+        major, auto_minor = get_next_version(db, doc_id)
+        version_str = f"{major}.{auto_minor}"
+        object_name = f"{prefix}{version_str}{ext}"
+
+        data = file.read()
+        file_stream = io.BytesIO(data)
+
+        minio_client.put_object(
+            MINIO_BUCKET,
+            object_name,
+            file_stream,
+            length=len(data),
+            content_type=file.mimetype,
+            metadata={"note": note} if note else None,
+        )
+
+        db.add(
+            DocumentVersion(
+                document_id=doc_id,
+                version=version_str,
+                path=object_name,
+                size=len(data),
+                content_type=file.mimetype,
+                note=note,
+            )
+        )
+        db.commit()
+
+        return jsonify({"version": {"name": version_str, "note": note}}), 201
     finally:
         db.close()
-
-    ext = os.path.splitext(file.filename)[1]
-    prefix = f"documents/{doc_id}/versions/"
-    versions = []
-    for obj in minio_client.list_objects(MINIO_BUCKET, prefix=prefix, recursive=False):
-        name = os.path.basename(obj.object_name)
-        base, _ = os.path.splitext(name)
-        parts = base.split(".")
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            versions.append((int(parts[0]), int(parts[1])))
-    if versions:
-        major, minor = max(versions)
-    else:
-        major, minor = 1, 0
-    version_str = f"{major}.{minor + 1}"
-    object_name = f"{prefix}{version_str}{ext}"
-
-    data = file.read()
-    file_stream = io.BytesIO(data)
-
-    minio_client.put_object(
-        MINIO_BUCKET,
-        object_name,
-        file_stream,
-        length=len(data),
-        content_type=file.mimetype,
-        metadata={"note": note} if note else None,
-    )
-
-    return jsonify({"version": {"name": version_str, "note": note}}), 201
 
 
 
