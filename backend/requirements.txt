@@ -12,4 +12,5 @@ requests
 python-docx
 openpyxl
 python-pptx
+minio
 
