@@ -2066,6 +2066,17 @@ def dashboard_data():
         upcoming = now + timedelta(days=7)
         user_files = db.query(UserFile).filter_by(username=username).all()
         user_links = db.query(ShareLink).filter_by(username=username).all()
+
+        status_counts = {
+            STATUS_DRAFT: 0,
+            STATUS_REVIEW: 0,
+            STATUS_APPROVED: 0,
+            STATUS_PUBLISHED: 0,
+        }
+        for f in user_files:
+            if f.status in status_counts:
+                status_counts[f.status] += 1
+
         expiring_map = {}
         for f in user_files:
             if f.expires_at and now < f.expires_at <= upcoming:
@@ -2102,6 +2113,7 @@ def dashboard_data():
         },
         teams=teams,
         expiring_files=expiring,
+        statuses=status_counts,
     )
 
 
@@ -2604,6 +2616,32 @@ def activities():
                 }
             )
         return jsonify(activities=data, categories=cat_set, users=user_set)
+    finally:
+        db.close()
+
+
+@app.get("/api/documents/<int:doc_id>")
+def get_document(doc_id):
+    """Return basic information for a document."""
+    db = SessionLocal()
+    try:
+        document = db.query(UserFile).filter_by(id=doc_id).first()
+        if not document:
+            return jsonify({"error": "Document not found"}), 404
+        active = None
+        if document.active_version_id:
+            version = (
+                db.query(DocumentVersion)
+                .filter_by(id=document.active_version_id)
+                .first()
+            )
+            if version:
+                active = {
+                    "id": version.id,
+                    "version": version.version,
+                    "path": version.path,
+                }
+        return jsonify({"id": document.id, "status": document.status, "active_version": active})
     finally:
         db.close()
 

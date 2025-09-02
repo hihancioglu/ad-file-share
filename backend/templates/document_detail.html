@@ -11,6 +11,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h1 class="h3 mb-0">Document Detail</h1>
       <div class="btn-toolbar">
+        <button id="publish-btn" class="btn btn-success me-2" disabled>Publish</button>
         <button id="add-version-btn" class="btn btn-primary">Add Version</button>
       </div>
     </div>
@@ -47,9 +48,45 @@
     </div>
   </div>
 
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+    <div id="ack-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <strong class="me-auto">ACK Ataması</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">
+        Yayınlama tamamlandı. ACK ataması yapabilirsiniz.
+        <div class="mt-2 pt-2 border-top">
+          <button id="ack-assign-btn" class="btn btn-sm btn-primary">ACK Ata</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     const docId = {{ doc_id | tojson }};
+    let currentStatus = null;
+    let hasActiveVersion = false;
+
+    function updatePublishButton() {
+      const btn = document.getElementById('publish-btn');
+      if (!btn) return;
+      if (currentStatus === 'review' || currentStatus === 'approved') {
+        btn.disabled = !hasActiveVersion;
+      } else {
+        btn.disabled = true;
+      }
+    }
+
+    async function fetchDocument() {
+      const res = await fetch(`/api/documents/${docId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      currentStatus = data.status;
+      hasActiveVersion = !!data.active_version;
+      updatePublishButton();
+    }
 
     async function fetchVersions() {
       const res = await fetch(`/api/documents/${docId}/versions`);
@@ -81,6 +118,23 @@
       modal.show();
     });
 
+    document.getElementById('publish-btn').addEventListener('click', async () => {
+      const fd = new FormData();
+      const res = await fetch(`/api/documents/${docId}/publish`, { method: 'POST', body: fd });
+      if (res.ok) {
+        currentStatus = 'published';
+        updatePublishButton();
+        const toastEl = document.getElementById('ack-toast');
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+      }
+    });
+
+    document.getElementById('ack-assign-btn').addEventListener('click', () => {
+      // Placeholder for ACK assignment behavior
+      alert('ACK assigned');
+    });
+
     document.getElementById('version-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -100,6 +154,7 @@
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
+      await fetchDocument();
       const versions = await fetchVersions();
       renderRevisions(versions);
     });

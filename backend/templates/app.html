@@ -123,7 +123,8 @@
             <h2>Dashboard</h2>
             <div class="mb-3">
               <span class="me-4"><strong>Toplam Dosya:</strong> <span id="dashboard-file-count"></span></span>
-              <span><strong>Toplam İndirme:</strong> <span id="dashboard-download-count"></span></span>
+              <span class="me-4"><strong>Toplam İndirme:</strong> <span id="dashboard-download-count"></span></span>
+              <span><strong>Yayınlanan:</strong> <span id="dashboard-published-count"></span></span>
             </div>
             <div class="row">
               <div class="col-md-4 mb-4">
@@ -1734,6 +1735,9 @@ async function loadDashboard() {
 
     document.getElementById('dashboard-file-count').textContent = json.file_count;
     document.getElementById('dashboard-download-count').textContent = json.download_count;
+    if (json.statuses) {
+        document.getElementById('dashboard-published-count').textContent = json.statuses.published || 0;
+    }
 
     const ctx = document.getElementById('disk-chart');
     const labels = json.disk_usage.files.map(f => f.name);
