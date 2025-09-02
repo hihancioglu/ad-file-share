@@ -101,6 +101,16 @@ def add_missing_columns():
     if "deleted_at" not in userfile_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE user_files ADD COLUMN deleted_at TIMESTAMP"))
+    if "status" not in userfile_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE user_files ADD COLUMN status VARCHAR DEFAULT 'draft'")
+            )
+    if "active_version_id" not in userfile_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE user_files ADD COLUMN active_version_id INTEGER")
+            )
 
     usershare_cols = [col["name"] for col in inspector.get_columns("user_shares")]
     if "deleted_at" not in usershare_cols:
@@ -118,3 +128,10 @@ def add_missing_columns():
     if "details" not in activity_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE activities ADD COLUMN details JSON"))
+
+    version_cols = [col["name"] for col in inspector.get_columns("document_versions")]
+    if "is_active" not in version_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE document_versions ADD COLUMN is_active BOOLEAN DEFAULT FALSE")
+            )

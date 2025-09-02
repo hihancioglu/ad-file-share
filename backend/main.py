@@ -60,6 +60,7 @@ from models import (
     DocumentVersion,
 )
 from sqlalchemy import func
+from services import set_active_version
 
 load_dotenv()
 add_missing_columns()
@@ -2636,17 +2637,18 @@ def upload_document_version(doc_id):
             metadata={"note": note} if note else None,
         )
 
-        db.add(
-            DocumentVersion(
-                document_id=doc_id,
-                version=version_str,
-                path=object_name,
-                size=len(data),
-                content_type=file.mimetype,
-                note=note,
-            )
+        new_version = DocumentVersion(
+            document_id=doc_id,
+            version=version_str,
+            path=object_name,
+            size=len(data),
+            content_type=file.mimetype,
+            note=note,
         )
+        db.add(new_version)
         db.commit()
+        db.refresh(new_version)
+        set_active_version(db, new_version)
 
         log_activity(
             username_local,

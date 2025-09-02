@@ -103,6 +103,8 @@ class UserFile(Base):
     expires_at = Column(DateTime)
     description = Column(String, default="")
     deleted_at = Column(DateTime)
+    status = Column(String, default="draft", index=True)
+    active_version_id = Column(Integer, ForeignKey("document_versions.id"), nullable=True)
 
 
 class DocumentVersion(Base):
@@ -116,6 +118,16 @@ class DocumentVersion(Base):
     content_type = Column(String)
     note = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=False)
+
+
+class UserFileStatusHistory(Base):
+    __tablename__ = "user_file_status_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_file_id = Column(Integer, ForeignKey("user_files.id"), index=True)
+    status = Column(String)
+    changed_at = Column(DateTime, default=datetime.utcnow)
 
 
 class FileMessage(Base):
