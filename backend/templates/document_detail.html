@@ -53,18 +53,32 @@
   <script>
     const docId = {{ doc_id | tojson }};
 
-    async function loadRevisions() {
+    async function fetchVersions() {
       const res = await fetch(`/api/documents/${docId}/versions`);
       if (!res.ok) {
-        return;
+        return [];
       }
       const data = await res.json();
+      return data.versions || [];
+    }
+
+    function renderRevisions(versions) {
       const list = document.getElementById('revision-history');
-      list.innerHTML = '';
-      (data.versions || []).forEach(v => {
+      const existing = new Set(
+        Array.from(list.children).map(li => li.getAttribute('data-path'))
+      );
+      versions.forEach(v => {
+        if (existing.has(v.path)) {
+          return;
+        }
         const li = document.createElement('li');
         li.className = 'list-group-item';
-        li.textContent = v.name || v.id || '';
+        li.setAttribute('data-path', v.path);
+        const a = document.createElement('a');
+        a.href = v.path;
+        a.textContent = v.name || v.id || '';
+        a.target = '_blank';
+        li.appendChild(a);
         list.appendChild(li);
       });
     }
@@ -82,11 +96,15 @@
         const modal = bootstrap.Modal.getInstance(modalEl);
         modal.hide();
         form.reset();
-        await loadRevisions();
+        const versions = await fetchVersions();
+        renderRevisions(versions);
       }
     });
 
-    document.addEventListener('DOMContentLoaded', loadRevisions);
+    document.addEventListener('DOMContentLoaded', async () => {
+      const versions = await fetchVersions();
+      renderRevisions(versions);
+    });
   </script>
 </body>
 </html>
