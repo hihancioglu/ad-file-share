@@ -256,7 +256,7 @@ def create_notification(username: str, message: str, team_id=None):
         db.close()
 
 
-def log_activity(usernames, message: str, category: str = "general"):
+def log_activity(usernames, message: str, category: str = "general", details=None):
     if isinstance(usernames, str):
         usernames = [usernames]
     db = SessionLocal()
@@ -266,7 +266,7 @@ def log_activity(usernames, message: str, category: str = "general"):
             prefix = f"{u} kullanıcısı "
             if msg.startswith(prefix):
                 msg = msg[len(prefix):]
-            db.add(Activity(username=u, message=msg, category=category))
+            db.add(Activity(username=u, message=msg, category=category, details=details))
         db.commit()
     finally:
         db.close()
@@ -2606,6 +2606,7 @@ def upload_document_version(doc_id):
     """Upload a new version for a document."""
     file = request.files.get("file")
     note = request.form.get("note", "")
+    username = request.form.get("username")
     if not file:
         return jsonify({"error": "No file provided"}), 400
 
@@ -2617,6 +2618,7 @@ def upload_document_version(doc_id):
         document = db.query(UserFile).filter_by(id=doc_id).first()
         if not document:
             return jsonify({"error": "Document not found"}), 404
+        username_local = username or document.username
 
         major, auto_minor = get_next_version(db, doc_id)
         version_str = f"{major}.{auto_minor}"
@@ -2645,6 +2647,20 @@ def upload_document_version(doc_id):
             )
         )
         db.commit()
+
+        log_activity(
+            username_local,
+            f"{username_local} kullanıcısı '{document.filename}' belgesine {version_str} sürümünü yükledi",
+            "version_uploaded",
+            {
+                "user": username_local,
+                "document_id": doc_id,
+                "version": version_str,
+                "size": len(data),
+                "content_type": file.mimetype,
+                "note": note,
+            },
+        )
 
         return jsonify({"version": {"name": version_str, "note": note}}), 201
     finally:
