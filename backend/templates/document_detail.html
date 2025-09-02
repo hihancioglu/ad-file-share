@@ -11,9 +11,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h1 class="h3 mb-0">Document Detail</h1>
       <div class="btn-toolbar">
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#versionModal">
-          Add Version
-        </button>
+        <button id="add-version-btn" class="btn btn-primary">Add Version</button>
       </div>
     </div>
 
@@ -64,13 +62,8 @@
 
     function renderRevisions(versions) {
       const list = document.getElementById('revision-history');
-      const existing = new Set(
-        Array.from(list.children).map(li => li.getAttribute('data-path'))
-      );
+      list.innerHTML = '';
       versions.forEach(v => {
-        if (existing.has(v.path)) {
-          return;
-        }
         const li = document.createElement('li');
         li.className = 'list-group-item';
         li.setAttribute('data-path', v.path);
@@ -82,6 +75,11 @@
         list.appendChild(li);
       });
     }
+
+    document.getElementById('add-version-btn').addEventListener('click', () => {
+      const modal = new bootstrap.Modal(document.getElementById('versionModal'));
+      modal.show();
+    });
 
     document.getElementById('version-form').addEventListener('submit', async (e) => {
       e.preventDefault();
