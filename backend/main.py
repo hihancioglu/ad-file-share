@@ -950,12 +950,14 @@ def list_files():
                 max(max_dl - link_dl_count, 0) if max_dl is not None else None
             )
             mgr_name = manager_name if token and not approved else ""
+            added_ts = stat.st_mtime
             files.append(
                 {
                     "title": filename,
-                    "added": datetime.fromtimestamp(stat.st_mtime).strftime(
+                    "added": datetime.fromtimestamp(added_ts).strftime(
                         "%d/%m/%Y %H:%M:%S"
                     ),
+                    "added_ts": added_ts,
                     "extension": os.path.splitext(filename)[1].lstrip("."),
                     "description": desc,
                     "size": stat.st_size,
@@ -977,7 +979,7 @@ def list_files():
                     "remaining_downloads": remaining_dl,
                 }
             )
-        files.sort(key=lambda f: f["added"], reverse=True)
+        files.sort(key=lambda f: f["added_ts"], reverse=True)
         return jsonify(files=files)
 
     db = SessionLocal()
@@ -1054,13 +1056,15 @@ def list_files():
                 max(max_dl - link_dl_count, 0) if max_dl is not None else None
             )
             mgr_name = manager_name if token and not approved else ""
+            added_ts = stat.st_mtime
             files.append(
                 {
                     "title": filename,
                     "username": user,
-                    "added": datetime.fromtimestamp(stat.st_mtime).strftime(
+                    "added": datetime.fromtimestamp(added_ts).strftime(
                         "%d/%m/%Y %H:%M:%S"
                     ),
+                    "added_ts": added_ts,
                     "extension": os.path.splitext(filename)[1].lstrip("."),
                     "description": desc,
                     "size": stat.st_size,
@@ -1082,7 +1086,7 @@ def list_files():
                     "remaining_downloads": remaining_dl,
                 }
             )
-    files.sort(key=lambda f: f["added"], reverse=True)
+    files.sort(key=lambda f: f["added_ts"], reverse=True)
     return jsonify(files=files)
 
 
