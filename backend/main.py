@@ -60,7 +60,13 @@ from models import (
     DocumentVersion,
 )
 from sqlalchemy import func
-from services import set_active_version
+from services import (
+    set_active_version,
+    change_userfile_status,
+    STATUS_REVIEW,
+    STATUS_APPROVED,
+    STATUS_PUBLISHED,
+)
 
 load_dotenv()
 add_missing_columns()
@@ -2598,6 +2604,50 @@ def activities():
                 }
             )
         return jsonify(activities=data, categories=cat_set, users=user_set)
+    finally:
+        db.close()
+
+
+@app.post("/api/documents/<int:doc_id>/publish")
+def publish_document(doc_id):
+    """Publish a document if eligible."""
+    username = request.form.get("username")
+    db = SessionLocal()
+    try:
+        document = db.query(UserFile).filter_by(id=doc_id).first()
+        if not document:
+            return jsonify({"error": "Document not found"}), 404
+        if document.status not in {STATUS_REVIEW, STATUS_APPROVED}:
+            return (
+                jsonify({"error": "Document cannot be published from current status"}),
+                400,
+            )
+        if not document.active_version_id:
+            return (
+                jsonify({"error": "Document must have an active version"}),
+                400,
+            )
+        active_version = (
+            db.query(DocumentVersion)
+            .filter_by(id=document.active_version_id, document_id=doc_id)
+            .first()
+        )
+        if not active_version:
+            return jsonify({"error": "Active version not found"}), 400
+
+        change_userfile_status(db, doc_id, STATUS_PUBLISHED)
+        username_local = username or document.username
+        log_activity(
+            username_local,
+            f"{username_local} kullanıcısı '{document.filename}' belgesini yayınladı",
+            "document_published",
+            {
+                "user": username_local,
+                "document_id": doc_id,
+                "version": active_version.version,
+            },
+        )
+        return jsonify({"status": STATUS_PUBLISHED}), 200
     finally:
         db.close()
 
