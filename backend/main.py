@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import mimetypes
 import zipfile
 import ipaddress
+import io
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -29,6 +30,7 @@ mimetypes.add_type("text/csv", ".csv")
 import msal
 import requests
 from functools import lru_cache
+from minio import Minio
 
 from flask import (
     Flask,
@@ -73,6 +75,25 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
+
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "files")
+
+minio_client = Minio(
+    MINIO_ENDPOINT,
+    access_key=MINIO_ACCESS_KEY,
+    secret_key=MINIO_SECRET_KEY,
+    secure=MINIO_SECURE,
+)
+
+try:
+    if not minio_client.bucket_exists(MINIO_BUCKET):
+        minio_client.make_bucket(MINIO_BUCKET)
+except Exception:
+    pass
 
 
 def get_unique_filename(directory: str, filename: str) -> str:
@@ -2559,6 +2580,53 @@ def activities():
         return jsonify(activities=data, categories=cat_set, users=user_set)
     finally:
         db.close()
+
+
+@app.post("/api/documents/<int:doc_id>/versions")
+def upload_document_version(doc_id):
+    """Upload a new version for a document."""
+    file = request.files.get("file")
+    note = request.form.get("note", "")
+    if not file:
+        return jsonify({"error": "No file provided"}), 400
+
+    db = SessionLocal()
+    try:
+        document = db.query(UserFile).filter_by(id=doc_id).first()
+        if not document:
+            return jsonify({"error": "Document not found"}), 404
+    finally:
+        db.close()
+
+    ext = os.path.splitext(file.filename)[1]
+    prefix = f"documents/{doc_id}/versions/"
+    versions = []
+    for obj in minio_client.list_objects(MINIO_BUCKET, prefix=prefix, recursive=False):
+        name = os.path.basename(obj.object_name)
+        base, _ = os.path.splitext(name)
+        parts = base.split(".")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            versions.append((int(parts[0]), int(parts[1])))
+    if versions:
+        major, minor = max(versions)
+    else:
+        major, minor = 1, 0
+    version_str = f"{major}.{minor + 1}"
+    object_name = f"{prefix}{version_str}{ext}"
+
+    data = file.read()
+    file_stream = io.BytesIO(data)
+
+    minio_client.put_object(
+        MINIO_BUCKET,
+        object_name,
+        file_stream,
+        length=len(data),
+        content_type=file.mimetype,
+        metadata={"note": note} if note else None,
+    )
+
+    return jsonify({"version": {"name": version_str, "note": note}}), 201
 
 
 
