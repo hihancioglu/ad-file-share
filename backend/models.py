@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Boolean
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Boolean, JSON
 
 from database import Base, engine
 
@@ -79,6 +79,7 @@ class Activity(Base):
     username = Column(String, index=True)
     message = Column(String)
     category = Column(String, index=True, default="general")
+    details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=3))
 
 

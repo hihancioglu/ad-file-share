@@ -115,3 +115,6 @@ def add_missing_columns():
                     "ALTER TABLE activities ADD COLUMN category VARCHAR DEFAULT 'general'"
                 )
             )
+    if "details" not in activity_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE activities ADD COLUMN details JSON"))
