@@ -577,7 +577,7 @@ window.addEventListener('beforeunload', () => {
         localStorage.setItem(SECTION_KEY, hash);
     }
 });
-let currentSort = { field: null, dir: 1 };
+let currentSort = { field: 'added', dir: -1 };
 
 function updateSortIcons() {
     document.querySelectorAll('#file-table thead th[data-field] .sort-icon').forEach(icon => {
@@ -1034,11 +1034,14 @@ function renderFiles() {
             } else if (currentSort.field === 'title') {
                 av = adminMode ? `${a.username} - ${a.title}` : a.title;
                 bv = adminMode ? `${b.username} - ${b.title}` : b.title;
+            } else if (currentSort.field === 'added') {
+                av = a.added_ts;
+                bv = b.added_ts;
             } else {
                 av = a[currentSort.field] || '';
                 bv = b[currentSort.field] || '';
             }
-            if (currentSort.field === 'size') {
+            if (currentSort.field === 'size' || currentSort.field === 'added') {
                 av = Number(av);
                 bv = Number(bv);
             } else {
