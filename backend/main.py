@@ -1107,9 +1107,11 @@ def download_file():
 def preview_user_file():
     username = request.args.get("username")
     filename = request.args.get("filename")
+    if not username or not filename:
+        return "", 400
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
-    if not os.path.exists(file_path):
+    if not os.path.isfile(file_path):
         return "", 404
     return send_file(file_path)
 
@@ -1119,9 +1121,11 @@ def direct_download_file():
     cleanup_expired_files()
     username = request.args.get("username")
     filename = request.args.get("filename")
+    if not username or not filename:
+        return "", 400
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
-    if not os.path.exists(file_path):
+    if not os.path.isfile(file_path):
         return "", 404
     log_download(username, filename, session.get("username"))
     return send_file(file_path, as_attachment=True, download_name=filename)
