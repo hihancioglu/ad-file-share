@@ -46,10 +46,23 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
     const data = new FormData(form);
+    const username = (data.get('username') || '').trim().toLowerCase();
+    const password = (data.get('password') || '').trim();
+    if (!username) {
+        document.getElementById('login-error').textContent = 'Kullanıcı adı boş bırakılamaz';
+        return;
+    }
+    if (!password) {
+        document.getElementById('login-error').textContent = 'Şifre boş bırakılamaz';
+        return;
+    }
+    data.set('username', username);
+    data.set('password', password);
+    document.getElementById('login-error').textContent = '';
     const res = await fetch('/login', { method: 'POST', body: data });
     const json = await res.json();
     if (json.success) {
-        localStorage.setItem('username', data.get('username').toLowerCase());
+        localStorage.setItem('username', username);
         if (json.givenName) {
             localStorage.setItem('name', json.givenName);
         }
