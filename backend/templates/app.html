@@ -517,6 +517,7 @@ if (isAdmin) {
     adminBtn.addEventListener('click', () => {
         updateSelectedStorage();
         adminMode = !adminMode;
+        localStorage.setItem(ADMIN_MODE_KEY, adminMode ? '1' : '0');
         adminBtn.textContent = adminMode ? 'Kullanıcı Modu' : 'Admin';
         loadSelected();
         loadFiles();
