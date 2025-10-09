@@ -646,8 +646,12 @@ def read_login():
 
 @app.route("/login", methods=["POST"])
 def login():
-    username = request.form.get("username", "").lower()
+    username = request.form.get("username", "").strip().lower()
     password = request.form.get("password")
+    if not username:
+        return jsonify(success=False, error="Kullanıcı adı zorunludur")
+    if not password:
+        return jsonify(success=False, error="Şifre zorunludur")
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{username}"
     try:
