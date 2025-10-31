@@ -67,8 +67,37 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
 CORS(app, supports_credentials=True)
 
-# Allow uploads up to 1 GB
-MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1 GB
+# Allow configurable upload size (defaults to 2 GB)
+
+
+def parse_size_setting(value: str, default: int) -> int:
+    if not value:
+        return default
+    value = value.strip().upper()
+    units = [
+        ("TB", 1024 ** 4),
+        ("GB", 1024 ** 3),
+        ("MB", 1024 ** 2),
+        ("KB", 1024),
+        ("B", 1),
+    ]
+    for suffix, multiplier in units:
+        if value.endswith(suffix):
+            number_part = value[: -len(suffix)].strip()
+            if not number_part:
+                break
+            try:
+                return int(float(number_part) * multiplier)
+            except ValueError:
+                break
+    try:
+        return int(float(value))
+    except ValueError:
+        return default
+
+
+DEFAULT_MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024
+MAX_UPLOAD_SIZE = parse_size_setting(os.getenv("MAX_UPLOAD_SIZE"), DEFAULT_MAX_UPLOAD_SIZE)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
 
 DATA_DIR = "data"
@@ -837,7 +866,10 @@ def upload_file():
         if current_size + len(data) > MAX_UPLOAD_SIZE:
             current_uploads.pop(key, None)
             return (
-                jsonify(success=False, error="Dosya 1 GB boyut sınırını aşıyor"),
+                jsonify(
+                    success=False,
+                    error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
+                ),
                 413,
             )
         with open(file_path, mode) as f:
@@ -865,7 +897,10 @@ def upload_file():
         if file and file.filename:
             if file.content_length and file.content_length > MAX_UPLOAD_SIZE:
                 return (
-                    jsonify(success=False, error="Dosya 1 GB boyut sınırını aşıyor"),
+                    jsonify(
+                        success=False,
+                        error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
+                    ),
                     413,
                 )
             final_name = get_unique_filename(user_dir, file.filename)
