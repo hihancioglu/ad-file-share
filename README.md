@@ -33,6 +33,8 @@ The application will be available at `http://localhost:8080/`.
 
 The backend reads LDAP settings from environment variables. To customize how usernames are searched, set `LDAP_SEARCH_FILTER` in the environment. The string should contain a `{query}` placeholder that will be replaced with the incoming search text. By default the application uses `(&(objectClass=user)(sAMAccountName=*{query}*))`.
 
+Set `MAX_UPLOAD_SIZE` to override the default 2 GB upload limit. The value can be specified in raw bytes (e.g. `2147483648`) or using `KB`, `MB`, `GB`, or `TB` suffixes (e.g. `2GB`).
+
 For public shares requiring manager approval, the backend sends an e-mail to the user's manager through the Microsoft Graph API. Configure the following variables:
 
 - `GRAPH_TENANT_ID`
