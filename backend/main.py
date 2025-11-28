@@ -104,16 +104,6 @@ DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def get_unique_filename(directory: str, filename: str) -> str:
-    base, ext = os.path.splitext(filename)
-    candidate = filename
-    counter = 1
-    while os.path.exists(os.path.join(directory, candidate)):
-        candidate = f"{base}_{counter}{ext}"
-        counter += 1
-    return candidate
-
-
 # Track in-progress uploads to handle name collisions for chunked uploads
 current_uploads = {}
 
@@ -849,16 +839,18 @@ def upload_file():
     chunk_index = request.form.get("chunk_index")
     total_chunks = request.form.get("total_chunks")
     description = request.form.get("description", "")
+    upload_id = request.form.get("upload_id")
 
     if filename and chunk and chunk_index is not None and total_chunks:
         chunk_index = int(chunk_index)
         total_chunks = int(total_chunks)
-        key = (username, filename)
+        key = (username, upload_id or filename)
         if chunk_index == 0:
-            final_name = get_unique_filename(user_dir, filename)
-            current_uploads[key] = final_name
-        final_name = current_uploads.get(key, filename)
-        file_path = os.path.join(user_dir, final_name)
+            temp_name = f"{upload_id}_{filename}" if upload_id else filename
+            current_uploads[key] = temp_name
+        temp_name = current_uploads.get(key, filename)
+        final_name = filename
+        file_path = os.path.join(user_dir, temp_name)
         mode = "wb" if chunk_index == 0 else "ab"
 
         data = chunk.read()
@@ -877,6 +869,9 @@ def upload_file():
         # If this was the last chunk, respond with completion info
         if chunk_index + 1 == total_chunks:
             current_uploads.pop(key, None)
+            final_path = os.path.join(user_dir, final_name)
+            if file_path != final_path:
+                os.replace(file_path, final_path)
             set_file_expiry(username, final_name, expires_dt, description)
             log_activity(
                 username,
@@ -903,7 +898,7 @@ def upload_file():
                     ),
                     413,
                 )
-            final_name = get_unique_filename(user_dir, file.filename)
+            final_name = file.filename
             file_path = os.path.join(user_dir, final_name)
             file.save(file_path)
             uploaded.append(final_name)
