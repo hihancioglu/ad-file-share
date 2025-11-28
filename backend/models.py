@@ -99,6 +99,7 @@ class UserFile(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True)
     filename = Column(String)
+    original_filename = Column(String, nullable=True)
     expires_at = Column(DateTime)
     description = Column(String, default="")
     deleted_at = Column(DateTime)

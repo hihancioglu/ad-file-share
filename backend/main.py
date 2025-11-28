@@ -108,6 +108,32 @@ os.makedirs(DATA_DIR, exist_ok=True)
 current_uploads = {}
 
 
+def reserved_filenames_for_user(username: str) -> set[str]:
+    reserved = set()
+    for (user, _), state in current_uploads.items():
+        if user != username:
+            continue
+        if isinstance(state, dict):
+            name = state.get("final_name")
+        else:
+            name = state
+        if name:
+            reserved.add(name)
+    return reserved
+
+
+def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[str]):
+    """Return a unique filename in *user_dir* avoiding collisions."""
+
+    candidate = desired_name
+    base, ext = os.path.splitext(desired_name)
+    counter = 1
+    while os.path.exists(os.path.join(user_dir, candidate)) or candidate in reserved:
+        candidate = f"{base}_{counter}{ext}"
+        counter += 1
+    return candidate
+
+
 def format_file_size(num_bytes: int) -> str:
     size = float(num_bytes)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -601,7 +627,13 @@ def log_download(
         )
 
 
-def set_file_expiry(username: str, filename: str, expires_dt, description: str = ""):
+def set_file_expiry(
+    username: str,
+    filename: str,
+    expires_dt,
+    description: str = "",
+    original_filename: str | None = None,
+):
     db = SessionLocal()
     try:
         meta = (
@@ -612,11 +644,14 @@ def set_file_expiry(username: str, filename: str, expires_dt, description: str =
         if meta:
             meta.expires_at = expires_dt
             meta.description = description
+            if original_filename:
+                meta.original_filename = original_filename
         else:
             db.add(
                 UserFile(
                     username=username,
                     filename=filename,
+                    original_filename=original_filename,
                     expires_at=expires_dt,
                     description=description,
                 )
@@ -845,11 +880,21 @@ def upload_file():
         chunk_index = int(chunk_index)
         total_chunks = int(total_chunks)
         key = (username, upload_id or filename)
-        if chunk_index == 0:
-            temp_name = f"{upload_id}_{filename}" if upload_id else filename
-            current_uploads[key] = temp_name
-        temp_name = current_uploads.get(key, filename)
-        final_name = filename
+        upload_state = current_uploads.get(key)
+        if chunk_index == 0 or not upload_state:
+            reserved = reserved_filenames_for_user(username)
+            final_name = generate_versioned_filename(user_dir, filename, reserved)
+            temp_name = f"{upload_id}_{final_name}" if upload_id else final_name
+            upload_state = {
+                "temp_name": temp_name,
+                "final_name": final_name,
+                "original_name": filename,
+            }
+            current_uploads[key] = upload_state
+        else:
+            temp_name = upload_state.get("temp_name", filename)
+            final_name = upload_state.get("final_name", filename)
+        original_name = upload_state.get("original_name", filename)
         file_path = os.path.join(user_dir, temp_name)
         mode = "wb" if chunk_index == 0 else "ab"
 
@@ -872,7 +917,13 @@ def upload_file():
             final_path = os.path.join(user_dir, final_name)
             if file_path != final_path:
                 os.replace(file_path, final_path)
-            set_file_expiry(username, final_name, expires_dt, description)
+            set_file_expiry(
+                username,
+                final_name,
+                expires_dt,
+                description,
+                original_filename=original_name,
+            )
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
@@ -898,11 +949,20 @@ def upload_file():
                     ),
                     413,
                 )
-            final_name = file.filename
+            reserved = reserved_filenames_for_user(username)
+            final_name = generate_versioned_filename(
+                user_dir, file.filename, reserved
+            )
             file_path = os.path.join(user_dir, final_name)
             file.save(file_path)
             uploaded.append(final_name)
-            set_file_expiry(username, final_name, expires_dt, description)
+            set_file_expiry(
+                username,
+                final_name,
+                expires_dt,
+                description,
+                original_filename=file.filename,
+            )
             log_activity(
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
@@ -925,7 +985,11 @@ def list_files():
         db = SessionLocal()
         try:
             metas = {
-                m.filename: (m.expires_at, m.description or "")
+                m.filename: (
+                    m.expires_at,
+                    m.description or "",
+                    m.original_filename or m.filename,
+                )
                 for m in db.query(UserFile)
                 .filter_by(username=username)
                 .filter(UserFile.deleted_at == None)
@@ -972,7 +1036,9 @@ def list_files():
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
-            exp, desc = metas.get(filename, (None, ""))
+            exp, desc, orig_name = metas.get(
+                filename, (None, "", filename)
+            )
             link_info = links.get(filename, {})
             token = link_info.get("token")
             link_exp = link_info.get("expires_at")
@@ -988,6 +1054,7 @@ def list_files():
             files.append(
                 {
                     "title": filename,
+                    "original_title": orig_name,
                     "added": datetime.fromtimestamp(added_ts).strftime(
                         "%d/%m/%Y %H:%M:%S"
                     ),
@@ -1019,7 +1086,11 @@ def list_files():
     db = SessionLocal()
     try:
         metas = {
-            (m.username, m.filename): (m.expires_at, m.description or "")
+            (m.username, m.filename): (
+                m.expires_at,
+                m.description or "",
+                m.original_filename or m.filename,
+            )
             for m in db.query(UserFile)
             .filter(UserFile.deleted_at == None)
             .all()
@@ -1078,7 +1149,9 @@ def list_files():
         for filename in os.listdir(user_dir):
             file_path = os.path.join(user_dir, filename)
             stat = os.stat(file_path)
-            exp, desc = metas.get((user, filename), (None, ""))
+            exp, desc, orig_name = metas.get(
+                (user, filename), (None, "", filename)
+            )
             link_info = links.get((user, filename), {})
             token = link_info.get("token")
             link_exp = link_info.get("expires_at")
@@ -1094,6 +1167,7 @@ def list_files():
             files.append(
                 {
                     "title": filename,
+                    "original_title": orig_name,
                     "username": user,
                     "added": datetime.fromtimestamp(added_ts).strftime(
                         "%d/%m/%Y %H:%M:%S"
