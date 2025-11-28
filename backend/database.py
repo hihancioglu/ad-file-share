@@ -101,6 +101,11 @@ def add_missing_columns():
     if "deleted_at" not in userfile_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE user_files ADD COLUMN deleted_at TIMESTAMP"))
+    if "original_filename" not in userfile_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE user_files ADD COLUMN original_filename VARCHAR")
+            )
 
     usershare_cols = [col["name"] for col in inspector.get_columns("user_shares")]
     if "deleted_at" not in usershare_cols:
