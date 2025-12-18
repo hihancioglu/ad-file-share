@@ -157,6 +157,18 @@ def format_remaining(td: timedelta) -> str:
     return f"{hours} saat"
 
 
+def iter_files_in_dir(directory: str):
+    """Yield file DirEntry objects within *directory* efficiently."""
+
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_file(follow_symlinks=False):
+                    yield entry
+    except FileNotFoundError:
+        return
+
+
 LDAP_SERVER = os.getenv("LDAP_SERVER")
 LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
 LDAP_USER = os.getenv("LDAP_USER")
@@ -1143,9 +1155,9 @@ def list_files():
             admin_user = next(iter(ADMIN_USERS), None)
             manager_name = get_full_name(admin_user) if admin_user else ""
         files = []
-        for filename in os.listdir(user_dir):
-            file_path = os.path.join(user_dir, filename)
-            stat = os.stat(file_path)
+        for entry in iter_files_in_dir(user_dir):
+            filename = entry.name
+            stat = entry.stat(follow_symlinks=False)
             exp, desc, orig_name = metas.get(
                 filename, (None, "", filename)
             )
@@ -1245,20 +1257,19 @@ def list_files():
         db.close()
 
     files = []
-    for user in os.listdir(DATA_DIR):
+    for user_entry in os.scandir(DATA_DIR):
         # Skip the special trash directory to avoid showing deleted files
-        if user == "_trash":
+        if user_entry.name == "_trash" or not user_entry.is_dir():
             continue
-        user_dir = os.path.join(DATA_DIR, user)
-        if not os.path.isdir(user_dir):
-            continue
+        user = user_entry.name
+        user_dir = user_entry.path
         _, _, manager_name = get_manager_info(user)
         if not manager_name:
             admin_user = next(iter(ADMIN_USERS), None)
             manager_name = get_full_name(admin_user) if admin_user else ""
-        for filename in os.listdir(user_dir):
-            file_path = os.path.join(user_dir, filename)
-            stat = os.stat(file_path)
+        for entry in iter_files_in_dir(user_dir):
+            filename = entry.name
+            stat = entry.stat(follow_symlinks=False)
             exp, desc, orig_name = metas.get(
                 (user, filename), (None, "", filename)
             )
