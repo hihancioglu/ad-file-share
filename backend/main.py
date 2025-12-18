@@ -1281,7 +1281,7 @@ def preview_user_file():
     finally:
         db.close()
     if not allowed:
-        return jsonify(success=False, error=message), 403
+        return render_template("message.html", message=message), 403
     return send_file(file_path)
 
 
@@ -1303,7 +1303,7 @@ def direct_download_file():
     finally:
         db.close()
     if not allowed:
-        return jsonify(success=False, error=message), 403
+        return render_template("message.html", message=message), 403
     log_download(username, filename, requester)
     return send_file(file_path, as_attachment=True, download_name=filename)
 
