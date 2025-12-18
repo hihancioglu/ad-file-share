@@ -487,16 +487,21 @@ def send_user_share_email(
         else ""
     )
     sender_name = get_full_name(sender)
-    subject = "Size yeni bir dosya gönderildi"
+    subject = "Baylan Send"
+    login_link = f"{PUBLIC_BASE_URL}/login"
     body = f"""
 <div style=\"font-family: Arial, sans-serif; line-height:1.6;\">
   <p>Merhaba,</p>
-  <p>{sender_name} kullanıcısı size bir dosya gönderdi.</p>
+  <p>{sender_name} kullanıcısı Baylan Send üzerinden sizinle bir dosya paylaşmıştır.</p>
   <ul style=\"list-style:none; padding-left:0;\">
     <li><strong>Dosya adı:</strong> {filename}</li>
     {expiry_text}
   </ul>
-  <p>Dosyaya gelen kutunuzdan erişebilirsiniz.</p>
+  <p>Dosyaya erişmek için sisteme giriş yapabilirsiniz.</p>
+  <p>
+    <a href=\"{login_link}\" style=\"padding:10px 16px;background-color:#0d6efd;color:#fff;text-decoration:none;border-radius:4px;\">Sisteme Giriş Yap</a>
+  </p>
+  <p>İlginize teşekkür eder, iyi çalışmalar dileriz.</p>
 </div>
 """.strip()
 
