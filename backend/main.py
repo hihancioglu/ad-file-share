@@ -684,6 +684,49 @@ def cleanup_expired_files():
         db.close()
 
 
+def user_can_access_file(owner: str, filename: str, requester: str | None, db):
+    """Return whether *requester* can access *filename* owned by *owner*."""
+
+    if not requester:
+        return False, "Giriş yapmanız gerekiyor"
+
+    if requester == owner:
+        return True, ""
+
+    now = datetime.utcnow()
+
+    share = (
+        db.query(UserShare)
+        .filter_by(sender=owner, recipient=requester, filename=filename)
+        .first()
+    )
+    if share:
+        if share.deleted_at or (share.expires_at and share.expires_at < now):
+            return False, "Paylaşım geçersiz veya süresi dolmuş"
+        return True, ""
+
+    team_files = (
+        db.query(TeamFile).filter_by(username=owner, filename=filename).all()
+    )
+    valid_team_ids = [
+        tf.team_id for tf in team_files if not tf.expires_at or tf.expires_at >= now
+    ]
+    if valid_team_ids:
+        membership = (
+            db.query(TeamMember)
+            .filter(
+                TeamMember.team_id.in_(valid_team_ids),
+                TeamMember.username == requester,
+                TeamMember.accepted == True,
+            )
+            .first()
+        )
+        if membership or is_admin(requester):
+            return True, ""
+
+    return False, "Yetkiniz yok"
+
+
 @app.route("/", methods=["GET"])
 def read_app():
     if "username" not in session:
@@ -1203,11 +1246,21 @@ def download_file():
     cleanup_expired_files()
     username = request.form.get("username")
     filename = request.form.get("filename")
+    requester = session.get("username")
+    if not requester:
+        return jsonify(success=False, error="Giriş yapmanız gerekiyor"), 401
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
         return jsonify(success=False, error="Dosya bulunamadı")
-    log_download(username, filename, session.get("username"))
+    db = SessionLocal()
+    try:
+        allowed, message = user_can_access_file(username, filename, requester, db)
+    finally:
+        db.close()
+    if not allowed:
+        return jsonify(success=False, error=message), 403
+    log_download(username, filename, requester)
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
@@ -1215,12 +1268,20 @@ def download_file():
 def preview_user_file():
     username = request.args.get("username")
     filename = request.args.get("filename")
+    requester = session.get("username")
     if not username or not filename:
         return "", 400
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.isfile(file_path):
         return "", 404
+    db = SessionLocal()
+    try:
+        allowed, message = user_can_access_file(username, filename, requester, db)
+    finally:
+        db.close()
+    if not allowed:
+        return jsonify(success=False, error=message), 403
     return send_file(file_path)
 
 
@@ -1229,13 +1290,21 @@ def direct_download_file():
     cleanup_expired_files()
     username = request.args.get("username")
     filename = request.args.get("filename")
+    requester = session.get("username")
     if not username or not filename:
         return "", 400
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.isfile(file_path):
         return "", 404
-    log_download(username, filename, session.get("username"))
+    db = SessionLocal()
+    try:
+        allowed, message = user_can_access_file(username, filename, requester, db)
+    finally:
+        db.close()
+    if not allowed:
+        return jsonify(success=False, error=message), 403
+    log_download(username, filename, requester)
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
