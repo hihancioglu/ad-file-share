@@ -1318,6 +1318,9 @@ async function loadIncoming() {
             data.append('username', username);
             data.append('sender', file.sender_id);
             data.append('filename', file.filename);
+            if (file.share_id) {
+                data.append('share_id', file.share_id);
+            }
             await fetch('/incoming/delete', { method: 'POST', body: data });
             loadIncoming();
         });
@@ -1355,6 +1358,9 @@ async function loadOutgoing() {
             data.append('filename', file.filename);
             data.append('target', file.target_id);
             data.append('type', file.type);
+            if (file.share_id) {
+                data.append('share_id', file.share_id);
+            }
             await fetch('/outgoing/delete', { method: 'POST', body: data });
             loadOutgoing();
         });

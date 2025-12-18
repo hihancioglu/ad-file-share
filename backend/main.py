@@ -1884,6 +1884,7 @@ def incoming_files():
                 continue
             files.append(
                 {
+                    "share_id": s.id,
                     "filename": s.filename,
                     "sender": get_full_name(s.sender),
                     "sender_id": s.sender,
@@ -1902,13 +1903,15 @@ def delete_incoming():
     username = request.form.get("username")
     sender = request.form.get("sender")
     filename = request.form.get("filename")
+    share_id = request.form.get("share_id")
     db = SessionLocal()
     try:
-        share = (
-            db.query(UserShare)
-            .filter_by(sender=sender, recipient=username, filename=filename)
-            .first()
-        )
+        query = db.query(UserShare).filter_by(recipient=username)
+        if share_id:
+            query = query.filter_by(id=int(share_id))
+        else:
+            query = query.filter_by(sender=sender, filename=filename)
+        share = query.first()
         if share:
             share.deleted_at = datetime.utcnow()
             db.commit()
@@ -1935,6 +1938,7 @@ def outgoing_files():
                 continue
             files.append(
                 {
+                    "share_id": s.id,
                     "filename": s.filename,
                     "target": get_full_name(s.recipient),
                     "target_id": s.recipient,
@@ -1953,6 +1957,7 @@ def outgoing_files():
                 continue
             files.append(
                 {
+                    "share_id": t.id,
                     "filename": t.filename,
                     "target": team_names.get(t.team_id, ""),
                     "target_id": t.team_id,
@@ -1973,12 +1978,16 @@ def delete_outgoing():
     filename = request.form.get("filename")
     target = request.form.get("target")
     target_type = request.form.get("type")
+    share_id = request.form.get("share_id")
     db = SessionLocal()
     try:
         if target_type == "user":
-            db.query(UserShare).filter_by(
-                sender=username, recipient=target, filename=filename
-            ).delete()
+            query = db.query(UserShare).filter_by(sender=username)
+            if share_id:
+                query = query.filter_by(id=int(share_id))
+            else:
+                query = query.filter_by(recipient=target, filename=filename)
+            query.delete()
             db.commit()
             log_activity(
                 [username, target],
@@ -1993,9 +2002,12 @@ def delete_outgoing():
                 .filter_by(team_id=team_id, accepted=True)
                 .all()
             )
-            db.query(TeamFile).filter_by(
-                team_id=team_id, username=username, filename=filename
-            ).delete()
+            query = db.query(TeamFile).filter_by(team_id=team_id, username=username)
+            if share_id:
+                query = query.filter_by(id=int(share_id))
+            else:
+                query = query.filter_by(filename=filename)
+            query.delete()
             db.commit()
             member_usernames = [m.username for m in members]
             if username not in member_usernames:
