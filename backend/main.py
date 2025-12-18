@@ -468,6 +468,68 @@ def send_approval_email(
         pass
 
 
+def send_user_share_email(
+    sender: str, recipient: str, filename: str, expires_at: datetime | None
+):
+    recipient_email = get_user_email(recipient)
+    if not (
+        recipient_email
+        and GRAPH_TENANT_ID
+        and GRAPH_CLIENT_ID
+        and GRAPH_CLIENT_SECRET
+        and GRAPH_SENDER
+    ):
+        return
+
+    expiry_text = (
+        f"<li><strong>Son kullanma tarihi:</strong> {expires_at.strftime('%d/%m/%Y')}</li>"
+        if expires_at
+        else ""
+    )
+    sender_name = get_full_name(sender)
+    subject = "Size yeni bir dosya gönderildi"
+    body = f"""
+<div style=\"font-family: Arial, sans-serif; line-height:1.6;\">
+  <p>Merhaba,</p>
+  <p>{sender_name} kullanıcısı size bir dosya gönderdi.</p>
+  <ul style=\"list-style:none; padding-left:0;\">
+    <li><strong>Dosya adı:</strong> {filename}</li>
+    {expiry_text}
+  </ul>
+  <p>Dosyaya gelen kutunuzdan erişebilirsiniz.</p>
+</div>
+""".strip()
+
+    authority = f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}"
+    app = msal.ConfidentialClientApplication(
+        GRAPH_CLIENT_ID, authority=authority, client_credential=GRAPH_CLIENT_SECRET
+    )
+    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    token_value = result.get("access_token")
+    if not token_value:
+        return
+
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": body},
+            "toRecipients": [{"emailAddress": {"address": recipient_email}}],
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {token_value}",
+        "Content-Type": "application/json",
+    }
+    try:
+        requests.post(
+            f"https://graph.microsoft.com/v1.0/users/{GRAPH_SENDER}/sendMail",
+            headers=headers,
+            json=message,
+        )
+    except Exception:
+        pass
+
+
 def find_share_token(username: str, filename: str):
     db = SessionLocal()
     try:
@@ -1859,6 +1921,7 @@ def share_with_user():
             )
         )
         db.commit()
+        send_user_share_email(sender, recipient, filename, expires_dt)
         log_activity(
             [sender, recipient],
             f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
