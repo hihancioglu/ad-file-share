@@ -62,6 +62,7 @@ load_dotenv()
 add_missing_columns()
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://sendv2.baylan.info.tr").rstrip("/")
+LOGIN_BASE_URL = os.getenv("LOGIN_BASE_URL", "https://send.baylan.local").rstrip("/")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
@@ -500,7 +501,7 @@ def send_user_share_email(
     )
     sender_name = get_full_name(sender)
     subject = "Baylan Send"
-    login_link = f"{PUBLIC_BASE_URL}/login"
+    login_link = f"{LOGIN_BASE_URL}/login"
     body = f"""
 <div style=\"font-family: Arial, sans-serif; line-height:1.6;\">
   <p>Merhaba,</p>
@@ -2836,4 +2837,3 @@ def activities():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
-
