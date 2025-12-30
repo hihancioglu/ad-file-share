@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
@@ -9,7 +10,23 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://admin:secret@postgres:5432/filesharedb"
 )
 
-engine = create_engine(DATABASE_URL)
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "30"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+engine_kwargs = {}
+db_url = make_url(DATABASE_URL)
+if db_url.get_backend_name() != "sqlite":
+    engine_kwargs = {
+        "pool_size": DB_POOL_SIZE,
+        "max_overflow": DB_MAX_OVERFLOW,
+        "pool_timeout": DB_POOL_TIMEOUT,
+        "pool_pre_ping": True,
+        "pool_recycle": DB_POOL_RECYCLE,
+    }
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
