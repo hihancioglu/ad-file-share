@@ -482,7 +482,11 @@ def send_approval_email(
 
 
 def send_user_share_email(
-    sender: str, recipient: str, filename: str, expires_at: datetime | None
+    sender: str,
+    recipient: str,
+    filename: str,
+    expires_at: datetime | None,
+    sender_name: str | None = None,
 ):
     recipient_email = get_user_email(recipient)
     if not (
@@ -499,7 +503,7 @@ def send_user_share_email(
         if expires_at
         else ""
     )
-    sender_name = get_full_name(sender)
+    sender_name = sender_name or get_full_name(sender)
     subject = "Baylan Send"
     login_link = f"{LOGIN_BASE_URL}/login"
     body = f"""
@@ -1927,18 +1931,24 @@ def share_with_user():
         )
         file_exp = meta.expires_at if meta else None
         if file_exp:
-            if not expires_dt or expires_dt > file_exp:
-                expires_dt = file_exp
+        if not expires_dt or expires_dt > file_exp:
+            expires_dt = file_exp
+        sender_name = get_full_name(sender)
+        recipient_name = get_full_name(recipient)
         db.add(
             UserShare(
                 sender=sender,
+                sender_name=sender_name,
                 recipient=recipient,
+                recipient_name=recipient_name,
                 filename=filename,
                 expires_at=expires_dt,
             )
         )
         db.commit()
-        send_user_share_email(sender, recipient, filename, expires_dt)
+        send_user_share_email(
+            sender, recipient, filename, expires_dt, sender_name=sender_name
+        )
         log_activity(
             [sender, recipient],
             f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
@@ -1966,7 +1976,7 @@ def incoming_files():
                 {
                     "share_id": s.id,
                     "filename": s.filename,
-                    "sender": get_full_name(s.sender),
+                    "sender": s.sender_name or s.sender,
                     "sender_id": s.sender,
                     "expires_at": s.expires_at.strftime("%d/%m/%Y")
                     if s.expires_at
@@ -2020,7 +2030,7 @@ def outgoing_files():
                 {
                     "share_id": s.id,
                     "filename": s.filename,
-                    "target": get_full_name(s.recipient),
+                    "target": s.recipient_name or s.recipient,
                     "target_id": s.recipient,
                     "type": "user",
                     "expires_at": s.expires_at.strftime("%d/%m/%Y")
