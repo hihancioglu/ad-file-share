@@ -1931,8 +1931,8 @@ def share_with_user():
         )
         file_exp = meta.expires_at if meta else None
         if file_exp:
-        if not expires_dt or expires_dt > file_exp:
-            expires_dt = file_exp
+            if not expires_dt or expires_dt > file_exp:
+                expires_dt = file_exp
         sender_name = get_full_name(sender)
         recipient_name = get_full_name(recipient)
         db.add(
