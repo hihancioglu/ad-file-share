@@ -87,7 +87,9 @@ class UserShare(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sender = Column(String, index=True)
+    sender_name = Column(String)
     recipient = Column(String, index=True)
+    recipient_name = Column(String)
     filename = Column(String)
     expires_at = Column(DateTime)
     deleted_at = Column(DateTime)

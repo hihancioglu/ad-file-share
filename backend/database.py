@@ -125,6 +125,16 @@ def add_missing_columns():
             )
 
     usershare_cols = [col["name"] for col in inspector.get_columns("user_shares")]
+    if "sender_name" not in usershare_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE user_shares ADD COLUMN sender_name VARCHAR")
+            )
+    if "recipient_name" not in usershare_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE user_shares ADD COLUMN recipient_name VARCHAR")
+            )
     if "deleted_at" not in usershare_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE user_shares ADD COLUMN deleted_at TIMESTAMP"))
