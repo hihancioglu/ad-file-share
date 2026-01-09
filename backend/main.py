@@ -97,6 +97,11 @@ class JsonSyslogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+class AuditOnlyFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name == "audit"
+
+
 def configure_logging():
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     root_logger = logging.getLogger()
@@ -115,6 +120,7 @@ def configure_logging():
     syslog_handler = SysLogHandler(address=(syslog_host, syslog_port), socktype=socktype)
     syslog_handler.setLevel(log_level)
     syslog_handler.setFormatter(JsonSyslogFormatter())
+    syslog_handler.addFilter(AuditOnlyFilter())
     root_logger.addHandler(syslog_handler)
 
 
@@ -330,6 +336,7 @@ def log_activity(usernames, message: str, category: str = "general"):
     if isinstance(usernames, str):
         usernames = [usernames]
     db = SessionLocal()
+    audit_logger = logging.getLogger("audit")
     try:
         for u in usernames:
             msg = message
@@ -337,6 +344,17 @@ def log_activity(usernames, message: str, category: str = "general"):
             if msg.startswith(prefix):
                 msg = msg[len(prefix):]
             db.add(Activity(username=u, message=msg, category=category))
+            audit_logger.info(
+                json.dumps(
+                    {
+                        "event": "activity",
+                        "username": u,
+                        "message": msg,
+                        "category": category,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         db.commit()
     finally:
         db.close()
