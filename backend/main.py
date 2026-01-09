@@ -75,26 +75,40 @@ CORS(app, supports_credentials=True)
 
 
 class JsonSyslogFormatter(logging.Formatter):
+    def __init__(self, app_name: str = "BaylanSend") -> None:
+        super().__init__()
+        self.app_name = app_name
+        self.hostname = socket.gethostname()
+
     def format(self, record: logging.LogRecord) -> str:
+        timestamp = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
         payload = {
-            "timestamp": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
-            "pathname": record.pathname,
-            "lineno": record.lineno,
-            "function": record.funcName,
-            "process": record.process,
-            "thread": record.thread,
         }
+        raw_message = record.getMessage()
+        try:
+            message_data = json.loads(raw_message)
+            if isinstance(message_data, dict):
+                payload.update(message_data)
+            else:
+                payload["message"] = raw_message
+        except json.JSONDecodeError:
+            payload["message"] = raw_message
         if has_request_context():
             payload["request"] = {
                 "method": request.method,
-                "path": request.path,
-                "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
-                "user_agent": request.headers.get("User-Agent"),
+                "remote_addr": request.headers.get(
+                    "X-Forwarded-For",
+                    request.remote_addr,
+                ),
             }
-        return json.dumps(payload, ensure_ascii=False)
+        structured_data = "-"
+        message = json.dumps(payload, ensure_ascii=False)
+        return (
+            f"1 {timestamp} {self.hostname} {self.app_name} {record.process} "
+            f"{record.name} {structured_data} {message}"
+        )
 
 
 class AuditOnlyFilter(logging.Filter):
