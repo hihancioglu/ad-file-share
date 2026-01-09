@@ -2,7 +2,10 @@ import os
 import shutil
 import secrets
 from datetime import datetime, timedelta
+import json
+import logging
 import mimetypes
+import socket
 import zipfile
 import ipaddress
 
@@ -57,6 +60,8 @@ from models import (
     FileMessage,
 )
 from sqlalchemy import func
+from logging.handlers import SysLogHandler
+from flask import has_request_context
 
 load_dotenv()
 add_missing_columns()
@@ -67,6 +72,53 @@ LOGIN_BASE_URL = os.getenv("LOGIN_BASE_URL", "https://send.baylan.local").rstrip
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
 CORS(app, supports_credentials=True)
+
+
+class JsonSyslogFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "pathname": record.pathname,
+            "lineno": record.lineno,
+            "function": record.funcName,
+            "process": record.process,
+            "thread": record.thread,
+        }
+        if has_request_context():
+            payload["request"] = {
+                "method": request.method,
+                "path": request.path,
+                "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
+                "user_agent": request.headers.get("User-Agent"),
+            }
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def configure_logging():
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(log_level)
+        root_logger.addHandler(handler)
+
+    syslog_host = os.getenv("SYSLOG_HOST")
+    if not syslog_host:
+        return
+    syslog_port = int(os.getenv("SYSLOG_PORT", "514"))
+    protocol = os.getenv("SYSLOG_PROTOCOL", "udp").lower()
+    socktype = socket.SOCK_DGRAM if protocol == "udp" else socket.SOCK_STREAM
+    syslog_handler = SysLogHandler(address=(syslog_host, syslog_port), socktype=socktype)
+    syslog_handler.setLevel(log_level)
+    syslog_handler.setFormatter(JsonSyslogFormatter())
+    root_logger.addHandler(syslog_handler)
+
+
+configure_logging()
 
 # Allow configurable upload size (defaults to 2 GB)
 
