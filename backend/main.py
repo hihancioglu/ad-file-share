@@ -346,7 +346,12 @@ def create_notification(username: str, message: str, team_id=None):
         db.close()
 
 
-def log_activity(usernames, message: str, category: str = "general"):
+def log_activity(
+    usernames,
+    message: str,
+    category: str = "general",
+    filename: str | None = None,
+):
     if isinstance(usernames, str):
         usernames = [usernames]
     db = SessionLocal()
@@ -365,6 +370,7 @@ def log_activity(usernames, message: str, category: str = "general"):
                         "username": u,
                         "message": msg,
                         "category": category,
+                        "filename": filename or "",
                     },
                     ensure_ascii=False,
                 )
@@ -792,6 +798,7 @@ def log_download(
             username,
             f"{downloader} kullanıcısı '{filename}' dosyanı indirdi",
             "download",
+            filename=filename,
         )
 
 
@@ -1139,6 +1146,7 @@ def upload_file():
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
                 "upload",
+                filename=final_name,
             )
             return jsonify(success=True, filenames=[final_name])
         return jsonify(success=True, chunk_index=chunk_index)
@@ -1178,6 +1186,7 @@ def upload_file():
                 username,
                 f"{username} kullanıcısı '{final_name}' dosyasını yükledi",
                 "upload",
+                filename=final_name,
             )
 
     return jsonify(success=True, filenames=uploaded)
@@ -1609,7 +1618,10 @@ def delete_file():
     delete_share_link(username, filename)
     delete_share_notification(username, filename)
     log_activity(
-        username, f"{username} kullanıcısı '{filename}' dosyasını sildi", "delete"
+        username,
+        f"{username} kullanıcısı '{filename}' dosyasını sildi",
+        "delete",
+        filename=filename,
     )
     return jsonify(success=True)
 
@@ -1691,7 +1703,10 @@ def restore_file():
     finally:
         db.close()
     log_activity(
-        username, f"{username} kullanıcısı '{filename}' dosyasını geri aldı", "restore"
+        username,
+        f"{username} kullanıcısı '{filename}' dosyasını geri aldı",
+        "restore",
+        filename=filename,
     )
     return jsonify(success=True)
 
@@ -1789,6 +1804,7 @@ def share_file():
             username,
             f"{username} kullanıcısı '{filename}' dosyası için açık paylaşım oluşturdu",
             "share_public",
+            filename=filename,
         )
         if auto_approve:
             create_notification(
@@ -1823,6 +1839,7 @@ def delete_share():
         username,
         f"{username} kullanıcısı '{filename}' dosyasının paylaşımını kaldırdı",
         "share_public_delete",
+        filename=filename,
     )
     return jsonify(success=True)
 
@@ -1849,6 +1866,7 @@ def approve_share(token):
             link.username,
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından onaylandı",
             "share_public_approve",
+            filename=link.filename,
         )
         return render_template("message.html", message="Paylaşım onaylandı")
     finally:
@@ -1877,6 +1895,7 @@ def reject_share(token):
             link.username,
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından reddedildi",
             "share_public_reject",
+            filename=link.filename,
         )
         return render_template("message.html", message="Paylaşım reddedildi")
     finally:
@@ -2041,6 +2060,7 @@ def share_with_user():
             [sender, recipient],
             f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
             "share_user",
+            filename=filename,
         )
         return jsonify(success=True)
     finally:
@@ -2097,6 +2117,7 @@ def delete_incoming():
                 [sender, username],
                 f"{username} kullanıcısı {sender} kullanıcısından gelen '{filename}' dosyasını sildi",
                 "share_user_delete",
+                filename=filename,
             )
         return jsonify(success=True)
     finally:
@@ -2171,6 +2192,7 @@ def delete_outgoing():
                 [username, target],
                 f"{username} kullanıcısı {target} kullanıcısına paylaştığı '{filename}' dosyasını kaldırdı",
                 "share_user_delete",
+                filename=filename,
             )
         elif target_type == "team":
             team_id = int(target)
@@ -2195,6 +2217,7 @@ def delete_outgoing():
                 member_usernames,
                 f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
                 "share_team_delete",
+                filename=filename,
             )
         return jsonify(success=True)
     finally:
@@ -2649,11 +2672,12 @@ def add_files_to_team():
         team_name = team.name if team else ""
         member_usernames = [m.username for m in members]
         for fname in filenames:
-            log_activity(
-                member_usernames,
-                f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
-                "team_add_file",
-            )
+        log_activity(
+            member_usernames,
+            f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
+            "team_add_file",
+            filename=fname,
+        )
         return jsonify(success=True)
     finally:
         db.close()
@@ -2683,6 +2707,7 @@ def delete_team_file():
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
             "team_delete_file",
+            filename=filename,
         )
         return jsonify(success=True)
     finally:
