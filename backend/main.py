@@ -1843,9 +1843,11 @@ def approve_share(token):
             link.username,
             f"'{link.filename}' paylaşımı onaylandı",
         )
+        approver = session.get("username")
+        approver_label = get_full_name(approver) if approver else "Bölüm amiri"
         log_activity(
             link.username,
-            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından onaylandı",
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından onaylandı",
             "share_public_approve",
         )
         return render_template("message.html", message="Paylaşım onaylandı")
@@ -1869,9 +1871,11 @@ def reject_share(token):
             link.username,
             f"'{link.filename}' paylaşımı reddedildi",
         )
+        approver = session.get("username")
+        approver_label = get_full_name(approver) if approver else "Bölüm amiri"
         log_activity(
             link.username,
-            f"{link.username} kullanıcısının '{link.filename}' paylaşımı bölüm amiri tarafından reddedildi",
+            f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından reddedildi",
             "share_public_reject",
         )
         return render_template("message.html", message="Paylaşım reddedildi")
