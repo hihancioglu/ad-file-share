@@ -2672,12 +2672,12 @@ def add_files_to_team():
         team_name = team.name if team else ""
         member_usernames = [m.username for m in members]
         for fname in filenames:
-        log_activity(
-            member_usernames,
-            f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
-            "team_add_file",
-            filename=fname,
-        )
+            log_activity(
+                member_usernames,
+                f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
+                "team_add_file",
+                filename=fname,
+            )
         return jsonify(success=True)
     finally:
         db.close()
