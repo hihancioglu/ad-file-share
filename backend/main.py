@@ -351,13 +351,19 @@ def log_activity(
     message: str,
     category: str = "general",
     filename: str | None = None,
+    actor: str | None = None,
+    target_users: list[str] | None = None,
 ):
     if isinstance(usernames, str):
         usernames = [usernames]
+    audience = [u for u in usernames if u]
+    if not actor:
+        if len(audience) == 1:
+            actor = audience[0]
     db = SessionLocal()
     audit_logger = logging.getLogger("audit")
     try:
-        for u in usernames:
+        for u in audience:
             msg = message
             prefix = f"{u} kullanıcısı "
             if msg.startswith(prefix):
@@ -367,7 +373,10 @@ def log_activity(
                 json.dumps(
                     {
                         "event": "activity",
-                        "username": u,
+                        "username": actor or "",
+                        "actor": actor or "",
+                        "audience": audience,
+                        "targets": target_users or [],
                         "message": msg,
                         "category": category,
                         "filename": filename or "",
@@ -799,6 +808,8 @@ def log_download(
             f"{downloader} kullanıcısı '{filename}' dosyanı indirdi",
             "download",
             filename=filename,
+            actor=downloader,
+            target_users=[username],
         )
 
 
@@ -1867,6 +1878,8 @@ def approve_share(token):
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından onaylandı",
             "share_public_approve",
             filename=link.filename,
+            actor=approver,
+            target_users=[link.username],
         )
         return render_template("message.html", message="Paylaşım onaylandı")
     finally:
@@ -1896,6 +1909,8 @@ def reject_share(token):
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından reddedildi",
             "share_public_reject",
             filename=link.filename,
+            actor=approver,
+            target_users=[link.username],
         )
         return render_template("message.html", message="Paylaşım reddedildi")
     finally:
@@ -2061,6 +2076,8 @@ def share_with_user():
             f"{sender} kullanıcısı {recipient} kullanıcısına '{filename}' dosyasını paylaştı",
             "share_user",
             filename=filename,
+            actor=sender,
+            target_users=[recipient],
         )
         return jsonify(success=True)
     finally:
@@ -2118,6 +2135,8 @@ def delete_incoming():
                 f"{username} kullanıcısı {sender} kullanıcısından gelen '{filename}' dosyasını sildi",
                 "share_user_delete",
                 filename=filename,
+                actor=username,
+                target_users=[sender],
             )
         return jsonify(success=True)
     finally:
@@ -2510,6 +2529,8 @@ def delete_team():
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibini sildi",
             "team_delete",
+            actor=username,
+            target_users=member_usernames,
         )
         return jsonify(success=True)
     finally:
@@ -2544,6 +2565,8 @@ def leave_team():
                 member_usernames,
                 f"{username} kullanıcısı {team_name} ekibinden ayrıldı",
                 "team_leave",
+                actor=username,
+                target_users=member_usernames,
             )
         return jsonify(success=True)
     finally:
@@ -2586,6 +2609,8 @@ def remove_member():
                 member_usernames,
                 f"{requester} kullanıcısı {team_name} ekibinden {member} kullanıcısını çıkardı",
                 "team_remove_member",
+                actor=requester,
+                target_users=[member],
             )
         return jsonify(success=True)
     finally:
@@ -2677,6 +2702,8 @@ def add_files_to_team():
                 f"{username} kullanıcısı {team_name} ekibine '{fname}' dosyasını yükledi",
                 "team_add_file",
                 filename=fname,
+                actor=username,
+                target_users=member_usernames,
             )
         return jsonify(success=True)
     finally:
@@ -2708,6 +2735,8 @@ def delete_team_file():
             f"{username} kullanıcısı {team_name} ekibinden '{filename}' dosyasını sildi",
             "team_delete_file",
             filename=filename,
+            actor=username,
+            target_users=member_usernames,
         )
         return jsonify(success=True)
     finally:
@@ -2814,6 +2843,8 @@ def accept_team():
             member_usernames,
             f"{username} kullanıcısı {team_name} ekibine katıldı",
             "team_accept",
+            actor=username,
+            target_users=member_usernames,
         )
         return jsonify(success=True)
     finally:
@@ -2838,7 +2869,13 @@ def reject_team():
             if team:
                 msg = f"{username} kullanıcısı {team.name} ekibine katılma davetini reddetti"
                 create_notification(team.creator, msg)
-                log_activity([team.creator, username], msg, "team_reject")
+                log_activity(
+                    [team.creator, username],
+                    msg,
+                    "team_reject",
+                    actor=username,
+                    target_users=[team.creator],
+                )
         return jsonify(success=True)
     finally:
         db.close()
