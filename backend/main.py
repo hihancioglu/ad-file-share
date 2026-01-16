@@ -131,6 +131,9 @@ def configure_logging():
     syslog_port = int(os.getenv("SYSLOG_PORT", "514"))
     protocol = os.getenv("SYSLOG_PROTOCOL", "udp").lower()
     socktype = socket.SOCK_DGRAM if protocol == "udp" else socket.SOCK_STREAM
+    for handler in root_logger.handlers:
+        if isinstance(handler, SysLogHandler):
+            return
     syslog_handler = SysLogHandler(address=(syslog_host, syslog_port), socktype=socktype)
     syslog_handler.setLevel(log_level)
     syslog_handler.setFormatter(JsonSyslogFormatter())
