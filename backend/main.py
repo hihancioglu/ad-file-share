@@ -1875,7 +1875,16 @@ def approve_share(token):
             f"'{link.filename}' paylaşımı onaylandı",
         )
         approver = session.get("username")
-        approver_label = get_full_name(approver) if approver else "Bölüm amiri"
+        if approver:
+            approver_label = get_full_name(approver)
+        else:
+            manager_user, _, manager_name = get_manager_info(link.username)
+            if manager_name:
+                approver_label = manager_name
+            elif manager_user:
+                approver_label = get_full_name(manager_user)
+            else:
+                approver_label = "Bölüm amiri"
         log_activity(
             link.username,
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından onaylandı",
@@ -1906,7 +1915,16 @@ def reject_share(token):
             f"'{link.filename}' paylaşımı reddedildi",
         )
         approver = session.get("username")
-        approver_label = get_full_name(approver) if approver else "Bölüm amiri"
+        if approver:
+            approver_label = get_full_name(approver)
+        else:
+            manager_user, _, manager_name = get_manager_info(link.username)
+            if manager_name:
+                approver_label = manager_name
+            elif manager_user:
+                approver_label = get_full_name(manager_user)
+            else:
+                approver_label = "Bölüm amiri"
         log_activity(
             link.username,
             f"{link.username} kullanıcısının '{link.filename}' paylaşımı {approver_label} tarafından reddedildi",
