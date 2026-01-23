@@ -392,6 +392,30 @@ def log_activity(
         db.close()
 
 
+def log_failed_login(username: str, reason: str) -> None:
+    audit_logger = logging.getLogger("audit")
+    payload = {
+        "event": "login_failed",
+        "username": username or "",
+        "reason": reason,
+    }
+    audit_logger.warning(json.dumps(payload, ensure_ascii=False))
+    if not username:
+        return
+    db = SessionLocal()
+    try:
+        db.add(
+            Activity(
+                username=username,
+                message=f"Giriş başarısız: {reason}",
+                category="login_failed",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def get_manager_info(username: str):
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{LDAP_USER}"
@@ -935,8 +959,10 @@ def login():
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password")
     if not username:
+        log_failed_login("", "Kullanıcı adı zorunludur")
         return jsonify(success=False, error="Kullanıcı adı zorunludur")
     if not password:
+        log_failed_login(username, "Şifre zorunludur")
         return jsonify(success=False, error="Şifre zorunludur")
     server = ldap3.Server(LDAP_SERVER)
     user_dn = f"{LDAP_DOMAIN}\\{username}"
@@ -945,9 +971,11 @@ def login():
             server, user=user_dn, password=password, authentication=ldap3.NTLM
         )
         if not conn.bind():
+            log_failed_login(username, "Kullanıcı adı veya şifre hatalı")
             return jsonify(success=False, error="Kullanıcı adı veya şifre hatalı")
         conn.unbind()
         if not has_manager(username) and username not in LOGIN_WHITELIST:
+            log_failed_login(username, "Giriş yetkisi yok")
             return jsonify(
                 success=False,
                 error="Sisteme giriş için Bilgi İşlemi arayınız.",
@@ -967,6 +995,7 @@ def login():
             admin=is_admin(username),
         )
     except Exception as e:
+        log_failed_login(username, str(e))
         return jsonify(success=False, error=str(e))
 
 
