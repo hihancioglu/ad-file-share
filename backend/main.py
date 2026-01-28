@@ -218,8 +218,6 @@ def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[
 
 
 MAX_WETRANSFER_REDIRECTS = 5
-MAX_WETRANSFER_API_RETRIES = 3
-WETRANSFER_API_RETRY_BACKOFF = 0.7
 WETRANSFER_PLAYWRIGHT_TIMEOUT = 60
 WETRANSFER_HEADERS = {
     "User-Agent": (
@@ -230,23 +228,6 @@ WETRANSFER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/json",
 }
-
-
-def build_wetransfer_headers(
-    *,
-    accept: str | None = None,
-    referer: str | None = None,
-    xhr: bool = False,
-) -> dict[str, str]:
-    headers = dict(WETRANSFER_HEADERS)
-    if accept:
-        headers["Accept"] = accept
-    if referer:
-        headers["Referer"] = referer
-        headers["Origin"] = "https://wetransfer.com"
-    if xhr:
-        headers["X-Requested-With"] = "XMLHttpRequest"
-    return headers
 
 
 def _truncate_log_value(value: str | None, limit: int = 500) -> str | None:
@@ -309,220 +290,6 @@ def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str
     raise ValueError("Çok fazla yönlendirme yapıldı")
 
 
-def _find_first_string(value, keys):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key in keys and isinstance(item, str):
-                return item
-            found = _find_first_string(item, keys)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for item in value:
-            found = _find_first_string(item, keys)
-            if found:
-                return found
-    return None
-
-
-def extract_wetransfer_download_info(html_text: str) -> tuple[str | None, str | None]:
-    match = re.search(
-        r'__NEXT_DATA__" type="application/json">(.+?)</script>',
-        html_text,
-        re.S,
-    )
-    if match:
-        try:
-            payload = json.loads(html.unescape(match.group(1)))
-        except json.JSONDecodeError:
-            payload = None
-        if payload:
-            download_url = _find_first_string(
-                payload,
-                {"download_url", "direct_link", "directLink", "downloadUrl"},
-            )
-            filename = _find_first_string(
-                payload,
-                {"name", "filename", "file_name", "fileName", "display_name"},
-            )
-            if download_url:
-                return download_url, filename
-    for key in ("download_url", "direct_link", "directLink", "downloadUrl"):
-        regex = rf'"{key}"\s*:\s*"([^"]+)"'
-        match = re.search(regex, html_text)
-        if match:
-            download_url = html.unescape(match.group(1))
-            filename = None
-            return download_url, filename
-    return None, None
-
-
-def extract_wetransfer_transfer_info(
-    html_text: str,
-) -> tuple[str | None, str | None, str | None]:
-    match = re.search(
-        r'__NEXT_DATA__" type="application/json">(.+?)</script>',
-        html_text,
-        re.S,
-    )
-    payload = None
-    if match:
-        try:
-            payload = json.loads(html.unescape(match.group(1)))
-        except json.JSONDecodeError:
-            payload = None
-    if payload:
-        transfer_id = _find_first_string(
-            payload,
-            {"transfer_id", "transferId"},
-        )
-        security_hash = _find_first_string(
-            payload,
-            {"security_hash", "securityHash"},
-        )
-        recipient_id = _find_first_string(
-            payload,
-            {"recipient_id", "recipientId"},
-        )
-        if transfer_id or security_hash or recipient_id:
-            return transfer_id, security_hash, recipient_id
-    return None, None, None
-
-
-def extract_wetransfer_csrf_token(html_text: str) -> str | None:
-    match = re.search(
-        r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"',
-        html_text,
-        re.I,
-    )
-    if match:
-        return html.unescape(match.group(1))
-    match = re.search(r'"csrfToken"\s*:\s*"([^"]+)"', html_text)
-    if match:
-        return html.unescape(match.group(1))
-    return None
-
-
-def parse_wetransfer_download_ids(url: str) -> tuple[str | None, str | None, str | None]:
-    parsed = urlparse(url)
-    parts = [part for part in parsed.path.split("/") if part]
-    try:
-        idx = parts.index("downloads")
-    except ValueError:
-        return None, None, None
-    transfer_id = parts[idx + 1] if len(parts) > idx + 1 else None
-    security_hash = parts[idx + 2] if len(parts) > idx + 2 else None
-    recipient_id = parts[idx + 3] if len(parts) > idx + 3 else None
-    return transfer_id, security_hash, recipient_id
-
-
-def fetch_wetransfer_download_link(
-    transfer_id: str,
-    security_hash: str,
-    recipient_id: str | None,
-    referer: str | None,
-    csrf_token: str | None,
-    timeout: tuple[int, int],
-) -> tuple[str | None, str | None]:
-    api_url = f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
-    base_payload = {"security_hash": security_hash, "intent": "download"}
-    payloads: list[dict[str, str]] = []
-    if recipient_id:
-        payloads.append({**base_payload, "recipient_id": recipient_id})
-    payloads.append(base_payload)
-    session_req = requests.Session()
-    logger = logging.getLogger("wetransfer")
-    last_exception: requests.RequestException | None = None
-    for payload in payloads:
-        headers = build_wetransfer_headers(
-            accept="application/json",
-            referer=referer,
-            xhr=True,
-        )
-        if csrf_token:
-            headers["X-CSRF-Token"] = csrf_token
-            headers["X-XSRF-Token"] = csrf_token
-        data = None
-        referer_response = None
-        if referer:
-            referer_response = session_req.get(
-                referer,
-                headers=build_wetransfer_headers(referer=referer),
-                timeout=timeout,
-            )
-            if not csrf_token and referer_response.ok:
-                csrf_token = extract_wetransfer_csrf_token(referer_response.text)
-                if csrf_token:
-                    headers["X-CSRF-Token"] = csrf_token
-                    headers["X-XSRF-Token"] = csrf_token
-        for attempt in range(1, MAX_WETRANSFER_API_RETRIES + 1):
-            response = None
-            try:
-                response = session_req.post(
-                    api_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=timeout,
-                )
-                if response.status_code >= 500 and attempt < MAX_WETRANSFER_API_RETRIES:
-                    logger.warning(
-                        "WeTransfer API retrying status=%s url=%s attempt=%s",
-                        response.status_code,
-                        api_url,
-                        attempt,
-                    )
-                    time.sleep(WETRANSFER_API_RETRY_BACKOFF * attempt)
-                    continue
-                response.raise_for_status()
-            except requests.RequestException as exc:
-                last_exception = exc
-                response_text = None
-                response_status = None
-                if response is not None:
-                    response_text = _truncate_log_value(response.text)
-                    response_status = response.status_code
-                logger.warning(
-                    "WeTransfer API request failed status=%s url=%s body=%s attempt=%s",
-                    response_status,
-                    api_url,
-                    response_text,
-                    attempt,
-                )
-                if (
-                    response_status
-                    and response_status >= 500
-                    and attempt < MAX_WETRANSFER_API_RETRIES
-                ):
-                    time.sleep(WETRANSFER_API_RETRY_BACKOFF * attempt)
-                    continue
-                if payload is payloads[-1]:
-                    logger.exception(
-                        "WeTransfer API request failed status=%s url=%s body=%s",
-                        response_status,
-                        api_url,
-                        response_text,
-                    )
-                    raise
-                break
-            data = response.json()
-            break
-        if data is not None:
-            break
-    else:
-        if last_exception:
-            raise last_exception
-        data = {}
-    download_url = _find_first_string(
-        data,
-        {"direct_link", "download_url", "directLink", "downloadUrl", "url"},
-    )
-    filename = _find_first_string(
-        data,
-        {"name", "filename", "file_name", "fileName", "display_name"},
-    )
-    return download_url, filename
-
-
 def _maybe_accept_wetransfer_cookies(page) -> None:
     selectors = [
         "button:has-text('Accept')",
@@ -541,25 +308,12 @@ def _maybe_accept_wetransfer_cookies(page) -> None:
 
 
 def _trigger_wetransfer_download(page, timeout_ms: int):
-    selectors = [
-        "button:has-text('Download')",
-        "button:has-text('Download all')",
-        "button:has-text('Get your files')",
-        "button:has-text('İndir')",
-        "button:has-text('İndir hepsini')",
-        "a:has-text('Download')",
-        "a:has-text('İndir')",
-    ]
-    for selector in selectors:
-        locator = page.locator(selector).first
-        if not locator.count():
-            continue
-        if not locator.is_visible():
-            continue
+    try:
         with page.expect_download(timeout=timeout_ms) as download_info:
-            locator.click()
-        return download_info.value
-    return None
+            page.wait_for_timeout(10000)
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError("WeTransfer download event oluşmadı") from exc
+    return download_info.value
 
 
 def download_wetransfer_with_playwright(
@@ -575,11 +329,9 @@ def download_wetransfer_with_playwright(
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            page.goto(url, wait_until="networkidle", timeout=timeout_ms)
             _maybe_accept_wetransfer_cookies(page)
             download = _trigger_wetransfer_download(page, timeout_ms)
-            if download is None:
-                raise RuntimeError("WeTransfer indirme işlemi başlatılamadı")
             suggested = download.suggested_filename or "wetransfer-file"
             original_filename = os.path.basename(suggested) or "wetransfer-file"
             final_name = generate_versioned_filename(user_dir, original_filename, reserved)
@@ -1679,7 +1431,7 @@ def import_wetransfer_file():
         return jsonify(success=False, error="Sadece WeTransfer bağlantılarına izin verilir"), 400
     logger.debug("WeTransfer import requested requester=%s url=%s", requester, url)
     try:
-        resolved_url, page_text = resolve_wetransfer_url(url, timeout=(10, 30))
+        resolved_url, _ = resolve_wetransfer_url(url, timeout=(10, 30))
     except ValueError as exc:
         logger.warning(
             "WeTransfer resolve failed requester=%s url=%s error=%s",
@@ -1715,148 +1467,7 @@ def import_wetransfer_file():
             resolved_url,
             exc,
         )
-    else:
-        set_file_expiry(
-            requester,
-            final_name,
-            expires_dt,
-            description,
-            original_filename=original_filename,
-        )
-        log_activity(
-            requester,
-            f"{requester} kullanıcısı '{final_name}' dosyasını WeTransfer üzerinden içe aktardı",
-            "import",
-            filename=final_name,
-        )
-        return jsonify(success=True, filename=final_name, url=resolved_url)
-
-    download_url = None
-    original_filename = None
-    transfer_id = None
-    security_hash = None
-    recipient_id = None
-    csrf_token = None
-    if page_text:
-        download_url, original_filename = extract_wetransfer_download_info(page_text)
-        transfer_id, security_hash, recipient_id = extract_wetransfer_transfer_info(
-            page_text
-        )
-        csrf_token = extract_wetransfer_csrf_token(page_text)
-    if not download_url:
-        if not (transfer_id and security_hash):
-            transfer_id, security_hash, recipient_id = parse_wetransfer_download_ids(
-                resolved_url
-            )
-        if transfer_id and security_hash:
-            try:
-                download_url, original_filename = fetch_wetransfer_download_link(
-                    transfer_id,
-                    security_hash,
-                    recipient_id,
-                    resolved_url,
-                    csrf_token,
-                    timeout=(10, 30),
-                )
-            except requests.RequestException:
-                logger.exception(
-                    "WeTransfer download API failed requester=%s url=%s",
-                    requester,
-                    resolved_url,
-                )
-                return (
-                    jsonify(success=False, error="WeTransfer indirme bağlantısı alınamadı"),
-                    502,
-                )
-    if not download_url:
-        logger.warning(
-            "WeTransfer download URL missing requester=%s url=%s",
-            requester,
-            resolved_url,
-        )
-        return jsonify(success=False, error="WeTransfer indirme bağlantısı bulunamadı"), 404
-    if download_url.startswith("/"):
-        download_url = urljoin(resolved_url, download_url)
-    if not is_allowed_wetransfer_url(download_url):
-        return jsonify(success=False, error="WeTransfer indirme bağlantısı geçersiz"), 400
-
-    original_filename = (
-        original_filename
-        or os.path.basename(urlparse(download_url).path)
-        or "wetransfer-file"
-    )
-    original_filename = os.path.basename(original_filename)
-
-    final_name = generate_versioned_filename(user_dir, original_filename, reserved)
-    file_path = os.path.join(user_dir, final_name)
-
-    download_timeout = (10, 30)
-    bytes_written = 0
-    try:
-        with requests.get(
-            download_url,
-            stream=True,
-            timeout=download_timeout,
-            headers=build_wetransfer_headers(
-                accept="*/*",
-                referer=resolved_url,
-            ),
-        ) as response:
-            response.raise_for_status()
-            logger.debug(
-                "WeTransfer file download started requester=%s url=%s status=%s",
-                requester,
-                download_url,
-                response.status_code,
-            )
-            content_length = response.headers.get("Content-Length")
-            if content_length:
-                try:
-                    if int(content_length) > MAX_UPLOAD_SIZE:
-                        return (
-                            jsonify(
-                                success=False,
-                                error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
-                            ),
-                            413,
-                        )
-                except ValueError:
-                    pass
-            with open(file_path, "wb") as handle:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if not chunk:
-                        continue
-                    bytes_written += len(chunk)
-                    if bytes_written > MAX_UPLOAD_SIZE:
-                        handle.close()
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
-                        return (
-                            jsonify(
-                                success=False,
-                                error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
-                            ),
-                            413,
-                        )
-                    handle.write(chunk)
-    except requests.RequestException:
-        logger.exception(
-            "WeTransfer file download failed requester=%s url=%s",
-            requester,
-            download_url,
-        )
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        return jsonify(success=False, error="WeTransfer dosyası indirilemedi"), 502
-    except Exception:
-        logger.exception(
-            "WeTransfer file save failed requester=%s url=%s",
-            requester,
-            download_url,
-        )
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        return jsonify(success=False, error="Dosya kaydedilirken hata oluştu"), 500
+        return jsonify(success=False, error=str(exc)), 502
 
     set_file_expiry(
         requester,
