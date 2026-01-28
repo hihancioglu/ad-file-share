@@ -226,7 +226,7 @@ def is_allowed_wetransfer_url(url: str) -> bool:
     return host.endswith(".wetransfer.com") or host == "wetransfer.com"
 
 
-def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str]:
+def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str | None]:
     session_req = requests.Session()
     current_url = url
     for _ in range(MAX_WETRANSFER_REDIRECTS):
@@ -239,6 +239,8 @@ def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str
             if not is_allowed_wetransfer_url(current_url):
                 raise ValueError("Sadece WeTransfer bağlantılarına izin verilir")
             continue
+        if response.status_code == 404:
+            return current_url, None
         if response.status_code >= 400:
             raise ValueError("WeTransfer bağlantısı alınamadı")
         return current_url, response.text
@@ -291,6 +293,49 @@ def extract_wetransfer_download_info(html_text: str) -> tuple[str | None, str | 
             filename = None
             return download_url, filename
     return None, None
+
+
+def parse_wetransfer_download_ids(url: str) -> tuple[str | None, str | None, str | None]:
+    parsed = urlparse(url)
+    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        idx = parts.index("downloads")
+    except ValueError:
+        return None, None, None
+    transfer_id = parts[idx + 1] if len(parts) > idx + 1 else None
+    security_hash = parts[idx + 2] if len(parts) > idx + 2 else None
+    recipient_id = parts[idx + 3] if len(parts) > idx + 3 else None
+    return transfer_id, security_hash, recipient_id
+
+
+def fetch_wetransfer_download_link(
+    transfer_id: str,
+    security_hash: str,
+    recipient_id: str | None,
+    timeout: tuple[int, int],
+) -> tuple[str | None, str | None]:
+    api_url = f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
+    payload = {"security_hash": security_hash, "intent": "download"}
+    if recipient_id:
+        payload["recipient_id"] = recipient_id
+    session_req = requests.Session()
+    response = session_req.post(
+        api_url,
+        json=payload,
+        headers={"Accept": "application/json"},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    data = response.json()
+    download_url = _find_first_string(
+        data,
+        {"direct_link", "download_url", "directLink", "downloadUrl", "url"},
+    )
+    filename = _find_first_string(
+        data,
+        {"name", "filename", "file_name", "fileName", "display_name"},
+    )
+    return download_url, filename
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -1372,7 +1417,27 @@ def import_wetransfer_file():
         return jsonify(success=False, error=str(exc)), 400
     except requests.RequestException:
         return jsonify(success=False, error="WeTransfer bağlantısı alınamadı"), 502
-    download_url, original_filename = extract_wetransfer_download_info(page_text)
+    download_url = None
+    original_filename = None
+    if page_text:
+        download_url, original_filename = extract_wetransfer_download_info(page_text)
+    if not download_url:
+        transfer_id, security_hash, recipient_id = parse_wetransfer_download_ids(
+            resolved_url
+        )
+        if transfer_id and security_hash:
+            try:
+                download_url, original_filename = fetch_wetransfer_download_link(
+                    transfer_id,
+                    security_hash,
+                    recipient_id,
+                    timeout=(10, 30),
+                )
+            except requests.RequestException:
+                return (
+                    jsonify(success=False, error="WeTransfer indirme bağlantısı alınamadı"),
+                    502,
+                )
     if not download_url:
         return jsonify(success=False, error="WeTransfer indirme bağlantısı bulunamadı"), 404
     if download_url.startswith("/"):
