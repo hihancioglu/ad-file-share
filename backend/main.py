@@ -347,6 +347,38 @@ def extract_wetransfer_download_info(html_text: str) -> tuple[str | None, str | 
     return None, None
 
 
+def extract_wetransfer_transfer_info(
+    html_text: str,
+) -> tuple[str | None, str | None, str | None]:
+    match = re.search(
+        r'__NEXT_DATA__" type="application/json">(.+?)</script>',
+        html_text,
+        re.S,
+    )
+    payload = None
+    if match:
+        try:
+            payload = json.loads(html.unescape(match.group(1)))
+        except json.JSONDecodeError:
+            payload = None
+    if payload:
+        transfer_id = _find_first_string(
+            payload,
+            {"transfer_id", "transferId"},
+        )
+        security_hash = _find_first_string(
+            payload,
+            {"security_hash", "securityHash"},
+        )
+        recipient_id = _find_first_string(
+            payload,
+            {"recipient_id", "recipientId"},
+        )
+        if transfer_id or security_hash or recipient_id:
+            return transfer_id, security_hash, recipient_id
+    return None, None, None
+
+
 def parse_wetransfer_download_ids(url: str) -> tuple[str | None, str | None, str | None]:
     parsed = urlparse(url)
     parts = [part for part in parsed.path.split("/") if part]
@@ -1528,12 +1560,19 @@ def import_wetransfer_file():
         return jsonify(success=False, error="WeTransfer bağlantısı alınamadı"), 502
     download_url = None
     original_filename = None
+    transfer_id = None
+    security_hash = None
+    recipient_id = None
     if page_text:
         download_url, original_filename = extract_wetransfer_download_info(page_text)
-    if not download_url:
-        transfer_id, security_hash, recipient_id = parse_wetransfer_download_ids(
-            resolved_url
+        transfer_id, security_hash, recipient_id = extract_wetransfer_transfer_info(
+            page_text
         )
+    if not download_url:
+        if not (transfer_id and security_hash):
+            transfer_id, security_hash, recipient_id = parse_wetransfer_download_ids(
+                resolved_url
+            )
         if transfer_id and security_hash:
             try:
                 download_url, original_filename = fetch_wetransfer_download_link(
