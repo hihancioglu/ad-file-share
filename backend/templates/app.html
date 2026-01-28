@@ -77,6 +77,7 @@
             <ul class="nav flex-column">
                 <li class="nav-item"><a class="nav-link" href="#dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link" href="#upload"><i class="bi bi-upload me-2"></i>Yükle</a></li>
+                <li class="nav-item"><a class="nav-link" href="#wetransfer"><i class="bi bi-cloud-download me-2"></i>Wetransfer</a></li>
                 <li class="nav-item">
                     <a class="nav-link" href="#files"><i class="bi bi-folder2-open me-2"></i>Dosyalarım</a>
                     <ul class="nav flex-column ms-3">
@@ -174,6 +175,24 @@
                 <button id="upload-btn" class="btn btn-primary d-none">Yükle</button>
             </div>
             <div id="upload-result" class="mt-2"></div>
+        </section>
+
+        <section id="wetransfer" class="mb-4 d-none" style="max-width: 50%;">
+            <h2>WeTransfer İçe Aktar</h2>
+            <div class="mb-3">
+                <label class="form-label" for="wetransfer-url">WeTransfer URL</label>
+                <input type="url" id="wetransfer-url" class="form-control" placeholder="https://wetransfer.com/..." required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="wetransfer-description">Açıklama (opsiyonel)</label>
+                <input type="text" id="wetransfer-description" class="form-control" placeholder="Dosya açıklaması">
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="wetransfer-expiry">Geçerlilik Tarihi (opsiyonel)</label>
+                <input type="date" id="wetransfer-expiry" class="form-control">
+            </div>
+            <button id="wetransfer-import-btn" class="btn btn-primary">İndir</button>
+            <div id="wetransfer-result" class="mt-2"></div>
         </section>
 
         <section id="files" class="d-none">
@@ -608,6 +627,7 @@ let diskChart;
 const sections = {
     dashboard: document.getElementById('dashboard'),
     upload: document.getElementById('upload'),
+    wetransfer: document.getElementById('wetransfer'),
     files: document.getElementById('files'),
     incoming: document.getElementById('incoming'),
     outgoing: document.getElementById('outgoing'),
@@ -905,6 +925,8 @@ function showSection(id) {
             loadActivities();
         } else if (id === 'dashboard') {
             loadDashboard();
+        } else if (id === 'wetransfer') {
+            resetWetransferForm();
         }
     }
 }
@@ -2149,6 +2171,13 @@ fileInput.addEventListener('change', () => addFiles(fileInput.files));
 const uploadBtn = document.getElementById('upload-btn');
 uploadBtn.addEventListener('click', handleUpload);
 
+const wetransferUrlInput = document.getElementById('wetransfer-url');
+const wetransferDescriptionInput = document.getElementById('wetransfer-description');
+const wetransferExpiryInput = document.getElementById('wetransfer-expiry');
+const wetransferBtn = document.getElementById('wetransfer-import-btn');
+const wetransferResult = document.getElementById('wetransfer-result');
+wetransferBtn.addEventListener('click', handleWetransferImport);
+
 const fileList = document.getElementById('file-list');
 const pendingTitle = document.getElementById('pending-title');
 let pendingFiles = [];
@@ -2272,6 +2301,50 @@ function createProgressBar(filename) {
     container.appendChild(progress);
     document.getElementById('upload-result').appendChild(container);
     return bar;
+}
+
+function resetWetransferForm() {
+    if (wetransferResult) {
+        wetransferResult.innerHTML = '';
+    }
+    if (wetransferUrlInput) {
+        wetransferUrlInput.value = '';
+    }
+    if (wetransferDescriptionInput) {
+        wetransferDescriptionInput.value = '';
+    }
+    if (wetransferExpiryInput) {
+        wetransferExpiryInput.value = '';
+    }
+}
+
+async function handleWetransferImport() {
+    wetransferResult.innerHTML = '';
+    const url = wetransferUrlInput.value.trim();
+    if (!url) {
+        wetransferResult.innerHTML = '<div class="alert alert-danger">URL zorunludur</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('url', url);
+    if (wetransferDescriptionInput.value.trim()) {
+        formData.append('description', wetransferDescriptionInput.value.trim());
+    }
+    if (wetransferExpiryInput.value) {
+        formData.append('expires_at', wetransferExpiryInput.value);
+    }
+    try {
+        const res = await fetch('/imports/wetransfer', { method: 'POST', body: formData });
+        const contentType = res.headers.get('Content-Type') || '';
+        const data = contentType.includes('application/json') ? await res.json() : { error: await res.text() };
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'İçe aktarma başarısız');
+        }
+        wetransferResult.innerHTML = '<div class="alert alert-success">WeTransfer dosyası içe aktarıldı</div>';
+        loadFiles();
+    } catch (error) {
+        wetransferResult.innerHTML = '<div class="alert alert-danger">' + (error.message || 'İçe aktarma başarısız') + '</div>';
+    }
 }
 
 // Sidebar resizing
