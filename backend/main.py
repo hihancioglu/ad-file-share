@@ -239,6 +239,15 @@ def build_wetransfer_headers(
     return headers
 
 
+def _truncate_log_value(value: str | None, limit: int = 500) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if len(trimmed) <= limit:
+        return trimmed
+    return f"{trimmed[:limit]}..."
+
+
 def is_allowed_wetransfer_url(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme != "https":
@@ -253,10 +262,17 @@ def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str
     session_req = requests.Session()
     session_req.headers.update(WETRANSFER_HEADERS)
     current_url = url
+    logger = logging.getLogger("wetransfer")
+    logger.debug("WeTransfer URL resolve started url=%s", current_url)
     for _ in range(MAX_WETRANSFER_REDIRECTS):
         response = session_req.get(current_url, allow_redirects=False, timeout=timeout)
         if response.is_redirect or response.is_permanent_redirect:
             location = response.headers.get("Location")
+            logger.debug(
+                "WeTransfer URL redirect status=%s location=%s",
+                response.status_code,
+                location,
+            )
             if not location:
                 break
             current_url = urljoin(current_url, location)
@@ -264,9 +280,21 @@ def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str
                 raise ValueError("Sadece WeTransfer bağlantılarına izin verilir")
             continue
         if response.status_code == 404:
+            logger.warning("WeTransfer URL not found status=404 url=%s", current_url)
             return current_url, None
         if response.status_code >= 400:
+            logger.warning(
+                "WeTransfer URL resolve failed status=%s url=%s body=%s",
+                response.status_code,
+                current_url,
+                _truncate_log_value(response.text),
+            )
             raise ValueError("WeTransfer bağlantısı alınamadı")
+        logger.debug(
+            "WeTransfer URL resolved status=%s url=%s",
+            response.status_code,
+            current_url,
+        )
         return current_url, response.text
     raise ValueError("Çok fazla yönlendirme yapıldı")
 
@@ -348,13 +376,28 @@ def fetch_wetransfer_download_link(
         accept="application/json",
         referer=referer,
     )
-    response = session_req.post(
-        api_url,
-        json=payload,
-        headers=headers,
-        timeout=timeout,
-    )
-    response.raise_for_status()
+    logger = logging.getLogger("wetransfer")
+    try:
+        response = session_req.post(
+            api_url,
+            json=payload,
+            headers=headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        response_text = None
+        response_status = None
+        if "response" in locals() and response is not None:
+            response_text = _truncate_log_value(response.text)
+            response_status = response.status_code
+        logger.exception(
+            "WeTransfer API request failed status=%s url=%s body=%s",
+            response_status,
+            api_url,
+            response_text,
+        )
+        raise
     data = response.json()
     download_url = _find_first_string(
         data,
@@ -1431,6 +1474,7 @@ def import_wetransfer_file():
     requester = session.get("username")
     if not requester:
         return jsonify(success=False, error="Giriş yapmanız gerekiyor"), 401
+    logger = logging.getLogger("wetransfer")
     payload = request.get_json(silent=True) or request.form
     url = (payload.get("url") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -1440,11 +1484,23 @@ def import_wetransfer_file():
         return jsonify(success=False, error="URL zorunludur"), 400
     if not is_allowed_wetransfer_url(url):
         return jsonify(success=False, error="Sadece WeTransfer bağlantılarına izin verilir"), 400
+    logger.debug("WeTransfer import requested requester=%s url=%s", requester, url)
     try:
         resolved_url, page_text = resolve_wetransfer_url(url, timeout=(10, 30))
     except ValueError as exc:
+        logger.warning(
+            "WeTransfer resolve failed requester=%s url=%s error=%s",
+            requester,
+            url,
+            exc,
+        )
         return jsonify(success=False, error=str(exc)), 400
     except requests.RequestException:
+        logger.exception(
+            "WeTransfer resolve request failed requester=%s url=%s",
+            requester,
+            url,
+        )
         return jsonify(success=False, error="WeTransfer bağlantısı alınamadı"), 502
     download_url = None
     original_filename = None
@@ -1464,11 +1520,21 @@ def import_wetransfer_file():
                     timeout=(10, 30),
                 )
             except requests.RequestException:
+                logger.exception(
+                    "WeTransfer download API failed requester=%s url=%s",
+                    requester,
+                    resolved_url,
+                )
                 return (
                     jsonify(success=False, error="WeTransfer indirme bağlantısı alınamadı"),
                     502,
                 )
     if not download_url:
+        logger.warning(
+            "WeTransfer download URL missing requester=%s url=%s",
+            requester,
+            resolved_url,
+        )
         return jsonify(success=False, error="WeTransfer indirme bağlantısı bulunamadı"), 404
     if download_url.startswith("/"):
         download_url = urljoin(resolved_url, download_url)
@@ -1501,6 +1567,12 @@ def import_wetransfer_file():
             ),
         ) as response:
             response.raise_for_status()
+            logger.debug(
+                "WeTransfer file download started requester=%s url=%s status=%s",
+                requester,
+                download_url,
+                response.status_code,
+            )
             content_length = response.headers.get("Content-Length")
             if content_length:
                 try:
@@ -1532,10 +1604,20 @@ def import_wetransfer_file():
                         )
                     handle.write(chunk)
     except requests.RequestException:
+        logger.exception(
+            "WeTransfer file download failed requester=%s url=%s",
+            requester,
+            download_url,
+        )
         if os.path.exists(file_path):
             os.remove(file_path)
         return jsonify(success=False, error="WeTransfer dosyası indirilemedi"), 502
     except Exception:
+        logger.exception(
+            "WeTransfer file save failed requester=%s url=%s",
+            requester,
+            download_url,
+        )
         if os.path.exists(file_path):
             os.remove(file_path)
         return jsonify(success=False, error="Dosya kaydedilirken hata oluştu"), 500
