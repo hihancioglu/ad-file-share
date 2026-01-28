@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import socket
+import time
 import zipfile
 import ipaddress
 import re
@@ -214,6 +215,8 @@ def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[
 
 
 MAX_WETRANSFER_REDIRECTS = 5
+MAX_WETRANSFER_API_RETRIES = 3
+WETRANSFER_API_RETRY_BACKOFF = 0.7
 WETRANSFER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -229,6 +232,7 @@ def build_wetransfer_headers(
     *,
     accept: str | None = None,
     referer: str | None = None,
+    xhr: bool = False,
 ) -> dict[str, str]:
     headers = dict(WETRANSFER_HEADERS)
     if accept:
@@ -236,6 +240,8 @@ def build_wetransfer_headers(
     if referer:
         headers["Referer"] = referer
         headers["Origin"] = "https://wetransfer.com"
+    if xhr:
+        headers["X-Requested-With"] = "XMLHttpRequest"
     return headers
 
 
@@ -412,45 +418,68 @@ def fetch_wetransfer_download_link(
         headers = build_wetransfer_headers(
             accept="application/json",
             referer=referer,
+            xhr=True,
         )
-        try:
-            if referer:
-                session_req.get(
-                    referer,
-                    headers=build_wetransfer_headers(referer=referer),
+        data = None
+        for attempt in range(1, MAX_WETRANSFER_API_RETRIES + 1):
+            response = None
+            try:
+                if referer:
+                    session_req.get(
+                        referer,
+                        headers=build_wetransfer_headers(referer=referer),
+                        timeout=timeout,
+                    )
+                response = session_req.post(
+                    api_url,
+                    json=payload,
+                    headers=headers,
                     timeout=timeout,
                 )
-            response = session_req.post(
-                api_url,
-                json=payload,
-                headers=headers,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            last_exception = exc
-            response_text = None
-            response_status = None
-            if "response" in locals() and response is not None:
-                response_text = _truncate_log_value(response.text)
-                response_status = response.status_code
-            logger.warning(
-                "WeTransfer API request failed status=%s url=%s body=%s",
-                response_status,
-                api_url,
-                response_text,
-            )
-            if payload is payloads[-1]:
-                logger.exception(
-                    "WeTransfer API request failed status=%s url=%s body=%s",
+                if response.status_code >= 500 and attempt < MAX_WETRANSFER_API_RETRIES:
+                    logger.warning(
+                        "WeTransfer API retrying status=%s url=%s attempt=%s",
+                        response.status_code,
+                        api_url,
+                        attempt,
+                    )
+                    time.sleep(WETRANSFER_API_RETRY_BACKOFF * attempt)
+                    continue
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                last_exception = exc
+                response_text = None
+                response_status = None
+                if response is not None:
+                    response_text = _truncate_log_value(response.text)
+                    response_status = response.status_code
+                logger.warning(
+                    "WeTransfer API request failed status=%s url=%s body=%s attempt=%s",
                     response_status,
                     api_url,
                     response_text,
+                    attempt,
                 )
-                raise
-            continue
-        data = response.json()
-        break
+                if (
+                    response_status
+                    and response_status >= 500
+                    and attempt < MAX_WETRANSFER_API_RETRIES
+                ):
+                    time.sleep(WETRANSFER_API_RETRY_BACKOFF * attempt)
+                    continue
+                if payload is payloads[-1]:
+                    logger.exception(
+                        "WeTransfer API request failed status=%s url=%s body=%s",
+                        response_status,
+                        api_url,
+                        response_text,
+                    )
+                    raise
+                break
+            data = response.json()
+            break
+        if data is not None:
+            break
     else:
         if last_exception:
             raise last_exception
