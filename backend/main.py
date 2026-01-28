@@ -8,6 +8,9 @@ import mimetypes
 import socket
 import zipfile
 import ipaddress
+import re
+from urllib.parse import urljoin, urlparse
+import html
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -208,6 +211,86 @@ def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[
         candidate = f"{base}_{counter}{ext}"
         counter += 1
     return candidate
+
+
+MAX_WETRANSFER_REDIRECTS = 5
+
+
+def is_allowed_wetransfer_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    if host == "we.tl":
+        return True
+    return host.endswith(".wetransfer.com") or host == "wetransfer.com"
+
+
+def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str]:
+    session_req = requests.Session()
+    current_url = url
+    for _ in range(MAX_WETRANSFER_REDIRECTS):
+        response = session_req.get(current_url, allow_redirects=False, timeout=timeout)
+        if response.is_redirect or response.is_permanent_redirect:
+            location = response.headers.get("Location")
+            if not location:
+                break
+            current_url = urljoin(current_url, location)
+            if not is_allowed_wetransfer_url(current_url):
+                raise ValueError("Sadece WeTransfer bağlantılarına izin verilir")
+            continue
+        if response.status_code >= 400:
+            raise ValueError("WeTransfer bağlantısı alınamadı")
+        return current_url, response.text
+    raise ValueError("Çok fazla yönlendirme yapıldı")
+
+
+def _find_first_string(value, keys):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in keys and isinstance(item, str):
+                return item
+            found = _find_first_string(item, keys)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_first_string(item, keys)
+            if found:
+                return found
+    return None
+
+
+def extract_wetransfer_download_info(html_text: str) -> tuple[str | None, str | None]:
+    match = re.search(
+        r'__NEXT_DATA__" type="application/json">(.+?)</script>',
+        html_text,
+        re.S,
+    )
+    if match:
+        try:
+            payload = json.loads(html.unescape(match.group(1)))
+        except json.JSONDecodeError:
+            payload = None
+        if payload:
+            download_url = _find_first_string(
+                payload,
+                {"download_url", "direct_link", "directLink", "downloadUrl"},
+            )
+            filename = _find_first_string(
+                payload,
+                {"name", "filename", "file_name", "fileName", "display_name"},
+            )
+            if download_url:
+                return download_url, filename
+    for key in ("download_url", "direct_link", "directLink", "downloadUrl"):
+        regex = rf'"{key}"\s*:\s*"([^"]+)"'
+        match = re.search(regex, html_text)
+        if match:
+            download_url = html.unescape(match.group(1))
+            filename = None
+            return download_url, filename
+    return None, None
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -1265,6 +1348,105 @@ def upload_file():
             )
 
     return jsonify(success=True, filenames=uploaded)
+
+
+@app.route("/imports/wetransfer", methods=["POST"])
+@app.route("/imports/url", methods=["POST"])
+def import_wetransfer_file():
+    cleanup_expired_files()
+    requester = session.get("username")
+    if not requester:
+        return jsonify(success=False, error="Giriş yapmanız gerekiyor"), 401
+    payload = request.get_json(silent=True) or request.form
+    url = (payload.get("url") or "").strip()
+    if not url:
+        return jsonify(success=False, error="URL zorunludur"), 400
+    if not is_allowed_wetransfer_url(url):
+        return jsonify(success=False, error="Sadece WeTransfer bağlantılarına izin verilir"), 400
+    try:
+        resolved_url, page_text = resolve_wetransfer_url(url, timeout=(10, 30))
+    except ValueError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+    except requests.RequestException:
+        return jsonify(success=False, error="WeTransfer bağlantısı alınamadı"), 502
+    download_url, original_filename = extract_wetransfer_download_info(page_text)
+    if not download_url:
+        return jsonify(success=False, error="WeTransfer indirme bağlantısı bulunamadı"), 404
+    if download_url.startswith("/"):
+        download_url = urljoin(resolved_url, download_url)
+    if not is_allowed_wetransfer_url(download_url):
+        return jsonify(success=False, error="WeTransfer indirme bağlantısı geçersiz"), 400
+
+    original_filename = (
+        original_filename
+        or os.path.basename(urlparse(download_url).path)
+        or "wetransfer-file"
+    )
+    original_filename = os.path.basename(original_filename)
+
+    user_dir = os.path.join(DATA_DIR, requester)
+    os.makedirs(user_dir, exist_ok=True)
+    reserved = reserved_filenames_for_user(requester)
+    final_name = generate_versioned_filename(user_dir, original_filename, reserved)
+    file_path = os.path.join(user_dir, final_name)
+
+    download_timeout = (10, 30)
+    bytes_written = 0
+    try:
+        with requests.get(download_url, stream=True, timeout=download_timeout) as response:
+            response.raise_for_status()
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > MAX_UPLOAD_SIZE:
+                        return (
+                            jsonify(
+                                success=False,
+                                error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
+                            ),
+                            413,
+                        )
+                except ValueError:
+                    pass
+            with open(file_path, "wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    bytes_written += len(chunk)
+                    if bytes_written > MAX_UPLOAD_SIZE:
+                        handle.close()
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        return (
+                            jsonify(
+                                success=False,
+                                error=f"Dosya {format_file_size(MAX_UPLOAD_SIZE)} boyut sınırını aşıyor",
+                            ),
+                            413,
+                        )
+                    handle.write(chunk)
+    except requests.RequestException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify(success=False, error="WeTransfer dosyası indirilemedi"), 502
+    except Exception:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify(success=False, error="Dosya kaydedilirken hata oluştu"), 500
+
+    set_file_expiry(
+        requester,
+        final_name,
+        None,
+        original_filename=original_filename,
+    )
+    log_activity(
+        requester,
+        f"{requester} kullanıcısı '{final_name}' dosyasını WeTransfer üzerinden içe aktardı",
+        "import",
+        filename=final_name,
+    )
+    return jsonify(success=True, filename=final_name, url=resolved_url)
 
 
 @app.route("/list", methods=["POST"])
