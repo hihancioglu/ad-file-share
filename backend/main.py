@@ -10,7 +10,7 @@ import time
 import zipfile
 import ipaddress
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, unquote
 import html
 
 # Ensure previewed file types have proper MIME types
@@ -307,13 +307,38 @@ def _maybe_accept_wetransfer_cookies(page) -> None:
             break
 
 
-def _trigger_wetransfer_download(page, timeout_ms: int):
+def _extract_filename_from_headers(headers: dict[str, str]) -> str | None:
+    content_disposition = headers.get("content-disposition")
+    if not content_disposition:
+        return None
+    utf8_match = re.search(r"filename\*=UTF-8''([^;]+)", content_disposition)
+    if utf8_match:
+        return unquote(utf8_match.group(1))
+    quoted_match = re.search(r'filename="([^"]+)"', content_disposition)
+    if quoted_match:
+        return quoted_match.group(1)
+    fallback_match = re.search(r"filename=([^;]+)", content_disposition)
+    if fallback_match:
+        return fallback_match.group(1).strip().strip('"')
+    return None
+
+
+def _get_wetransfer_direct_link(page, timeout_ms: int) -> str:
     try:
-        with page.expect_download(timeout=timeout_ms) as download_info:
+        with page.expect_response(
+            lambda response: "/api/v4/transfers/" in response.url
+            and response.request.method == "POST",
+            timeout=timeout_ms,
+        ) as response_info:
             page.wait_for_timeout(10000)
     except PlaywrightTimeoutError as exc:
-        raise RuntimeError("WeTransfer download event oluşmadı") from exc
-    return download_info.value
+        raise RuntimeError("WeTransfer API yanıtı alınamadı") from exc
+    response = response_info.value
+    data = response.json()
+    direct_link = data.get("direct_link")
+    if not direct_link:
+        raise ValueError("WeTransfer direct link bulunamadı")
+    return direct_link
 
 
 def download_wetransfer_with_playwright(
@@ -331,18 +356,32 @@ def download_wetransfer_with_playwright(
         try:
             page.goto(url, wait_until="networkidle", timeout=timeout_ms)
             _maybe_accept_wetransfer_cookies(page)
-            download = _trigger_wetransfer_download(page, timeout_ms)
-            suggested = download.suggested_filename or "wetransfer-file"
-            original_filename = os.path.basename(suggested) or "wetransfer-file"
-            final_name = generate_versioned_filename(user_dir, original_filename, reserved)
-            file_path = os.path.join(user_dir, final_name)
-            download.save_as(file_path)
-            file_size = os.path.getsize(file_path)
-            if file_size > max_size:
-                os.remove(file_path)
+            download_url = _get_wetransfer_direct_link(page, timeout_ms)
+            response = context.request.get(download_url, timeout=timeout_ms)
+            if not response.ok:
+                raise ValueError("WeTransfer dosyası indirilemedi")
+            content_length = response.headers.get("content-length")
+            if content_length:
+                try:
+                    if int(content_length) > max_size:
+                        raise ValueError(
+                            f"Dosya {format_file_size(max_size)} boyut sınırını aşıyor"
+                        )
+                except ValueError:
+                    raise
+                except Exception:
+                    pass
+            file_body = response.body()
+            if len(file_body) > max_size:
                 raise ValueError(
                     f"Dosya {format_file_size(max_size)} boyut sınırını aşıyor"
                 )
+            suggested = _extract_filename_from_headers(response.headers) or "wetransfer-file"
+            original_filename = os.path.basename(suggested) or "wetransfer-file"
+            final_name = generate_versioned_filename(user_dir, original_filename, reserved)
+            file_path = os.path.join(user_dir, final_name)
+            with open(file_path, "wb") as file_handle:
+                file_handle.write(file_body)
             logger.debug(
                 "WeTransfer Playwright download completed requester=%s url=%s file=%s",
                 os.path.basename(user_dir),
