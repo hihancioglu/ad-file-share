@@ -809,6 +809,7 @@ def log_download(
 ):
     ip_addr = get_client_ip()
     country = get_country_from_ip(ip_addr) if ip_addr else ""
+    audit_logger = logging.getLogger("audit")
     db = SessionLocal()
     try:
         db.add(
@@ -829,6 +830,20 @@ def log_download(
         db.commit()
     finally:
         db.close()
+    audit_logger.info(
+        json.dumps(
+            {
+                "event": "download",
+                "username": username,
+                "filename": filename,
+                "downloader": downloader or "",
+                "token": token or "",
+                "ip_address": ip_addr,
+                "country": country,
+            },
+            ensure_ascii=False,
+        )
+    )
     if downloader and downloader != username:
         log_activity(
             username,
