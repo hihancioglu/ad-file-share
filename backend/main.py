@@ -214,6 +214,15 @@ def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[
 
 
 MAX_WETRANSFER_REDIRECTS = 5
+WETRANSFER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/121.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/json",
+}
 
 
 def is_allowed_wetransfer_url(url: str) -> bool:
@@ -228,6 +237,7 @@ def is_allowed_wetransfer_url(url: str) -> bool:
 
 def resolve_wetransfer_url(url: str, timeout: tuple[int, int]) -> tuple[str, str | None]:
     session_req = requests.Session()
+    session_req.headers.update(WETRANSFER_HEADERS)
     current_url = url
     for _ in range(MAX_WETRANSFER_REDIRECTS):
         response = session_req.get(current_url, allow_redirects=False, timeout=timeout)
@@ -319,10 +329,12 @@ def fetch_wetransfer_download_link(
     if recipient_id:
         payload["recipient_id"] = recipient_id
     session_req = requests.Session()
+    headers = dict(WETRANSFER_HEADERS)
+    headers["Accept"] = "application/json"
     response = session_req.post(
         api_url,
         json=payload,
-        headers={"Accept": "application/json"},
+        headers=headers,
         timeout=timeout,
     )
     response.raise_for_status()
@@ -1461,7 +1473,12 @@ def import_wetransfer_file():
     download_timeout = (10, 30)
     bytes_written = 0
     try:
-        with requests.get(download_url, stream=True, timeout=download_timeout) as response:
+        with requests.get(
+            download_url,
+            stream=True,
+            timeout=download_timeout,
+            headers=WETRANSFER_HEADERS,
+        ) as response:
             response.raise_for_status()
             content_length = response.headers.get("Content-Length")
             if content_length:
