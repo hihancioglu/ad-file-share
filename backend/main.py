@@ -225,6 +225,20 @@ WETRANSFER_HEADERS = {
 }
 
 
+def build_wetransfer_headers(
+    *,
+    accept: str | None = None,
+    referer: str | None = None,
+) -> dict[str, str]:
+    headers = dict(WETRANSFER_HEADERS)
+    if accept:
+        headers["Accept"] = accept
+    if referer:
+        headers["Referer"] = referer
+        headers["Origin"] = "https://wetransfer.com"
+    return headers
+
+
 def is_allowed_wetransfer_url(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme != "https":
@@ -322,6 +336,7 @@ def fetch_wetransfer_download_link(
     transfer_id: str,
     security_hash: str,
     recipient_id: str | None,
+    referer: str | None,
     timeout: tuple[int, int],
 ) -> tuple[str | None, str | None]:
     api_url = f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
@@ -329,8 +344,10 @@ def fetch_wetransfer_download_link(
     if recipient_id:
         payload["recipient_id"] = recipient_id
     session_req = requests.Session()
-    headers = dict(WETRANSFER_HEADERS)
-    headers["Accept"] = "application/json"
+    headers = build_wetransfer_headers(
+        accept="application/json",
+        referer=referer,
+    )
     response = session_req.post(
         api_url,
         json=payload,
@@ -1443,6 +1460,7 @@ def import_wetransfer_file():
                     transfer_id,
                     security_hash,
                     recipient_id,
+                    resolved_url,
                     timeout=(10, 30),
                 )
             except requests.RequestException:
@@ -1477,7 +1495,10 @@ def import_wetransfer_file():
             download_url,
             stream=True,
             timeout=download_timeout,
-            headers=WETRANSFER_HEADERS,
+            headers=build_wetransfer_headers(
+                accept="*/*",
+                referer=resolved_url,
+            ),
         ) as response:
             response.raise_for_status()
             content_length = response.headers.get("Content-Length")
