@@ -1359,6 +1359,9 @@ def import_wetransfer_file():
         return jsonify(success=False, error="Giriş yapmanız gerekiyor"), 401
     payload = request.get_json(silent=True) or request.form
     url = (payload.get("url") or "").strip()
+    description = (payload.get("description") or "").strip()
+    expires_at = (payload.get("expires_at") or "").strip()
+    expires_dt = datetime.strptime(expires_at, "%Y-%m-%d") if expires_at else None
     if not url:
         return jsonify(success=False, error="URL zorunludur"), 400
     if not is_allowed_wetransfer_url(url):
@@ -1437,7 +1440,8 @@ def import_wetransfer_file():
     set_file_expiry(
         requester,
         final_name,
-        None,
+        expires_dt,
+        description,
         original_filename=original_filename,
     )
     log_activity(
