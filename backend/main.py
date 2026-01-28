@@ -395,7 +395,9 @@ def log_activity(
 def log_failed_login(username: str, reason: str) -> None:
     audit_logger = logging.getLogger("audit")
     payload = {
-        "event": "login_failed",
+        "event": "activity",
+        "event_type": "activity",
+        "action": "login_failed",
         "username": username or "",
         "reason": reason,
     }
@@ -811,6 +813,7 @@ def log_download(
     country = get_country_from_ip(ip_addr) if ip_addr else ""
     audit_logger = logging.getLogger("audit")
     db = SessionLocal()
+    action = "download"
     try:
         db.add(
             DownloadLog(
@@ -821,6 +824,18 @@ def log_download(
                 token=token,
             )
         )
+        if token:
+            action = "share_public_download"
+        elif downloader and downloader != username:
+            now = datetime.utcnow()
+            share = (
+                db.query(UserShare)
+                .filter_by(sender=username, recipient=downloader, filename=filename)
+                .first()
+            )
+            if share and not share.deleted_at:
+                if not share.expires_at or share.expires_at >= now:
+                    action = "share_user_download"
         if token:
             link = db.query(ShareLink).filter_by(token=token).first()
             if link:
@@ -833,7 +848,9 @@ def log_download(
     audit_logger.info(
         json.dumps(
             {
-                "event": "download",
+                "event": "activity",
+                "event_type": "activity",
+                "action": action,
                 "username": username,
                 "filename": filename,
                 "downloader": downloader or "",
