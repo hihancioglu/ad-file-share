@@ -368,37 +368,61 @@ def fetch_wetransfer_download_link(
     timeout: tuple[int, int],
 ) -> tuple[str | None, str | None]:
     api_url = f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
-    payload = {"security_hash": security_hash, "intent": "download"}
+    base_payload = {"security_hash": security_hash, "intent": "download"}
+    payloads: list[dict[str, str]] = []
     if recipient_id:
-        payload["recipient_id"] = recipient_id
+        payloads.append({**base_payload, "recipient_id": recipient_id})
+    payloads.append(base_payload)
     session_req = requests.Session()
-    headers = build_wetransfer_headers(
-        accept="application/json",
-        referer=referer,
-    )
     logger = logging.getLogger("wetransfer")
-    try:
-        response = session_req.post(
-            api_url,
-            json=payload,
-            headers=headers,
-            timeout=timeout,
+    last_exception: requests.RequestException | None = None
+    for payload in payloads:
+        headers = build_wetransfer_headers(
+            accept="application/json",
+            referer=referer,
         )
-        response.raise_for_status()
-    except requests.RequestException:
-        response_text = None
-        response_status = None
-        if "response" in locals() and response is not None:
-            response_text = _truncate_log_value(response.text)
-            response_status = response.status_code
-        logger.exception(
-            "WeTransfer API request failed status=%s url=%s body=%s",
-            response_status,
-            api_url,
-            response_text,
-        )
-        raise
-    data = response.json()
+        try:
+            if referer:
+                session_req.get(
+                    referer,
+                    headers=build_wetransfer_headers(referer=referer),
+                    timeout=timeout,
+                )
+            response = session_req.post(
+                api_url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            last_exception = exc
+            response_text = None
+            response_status = None
+            if "response" in locals() and response is not None:
+                response_text = _truncate_log_value(response.text)
+                response_status = response.status_code
+            logger.warning(
+                "WeTransfer API request failed status=%s url=%s body=%s",
+                response_status,
+                api_url,
+                response_text,
+            )
+            if payload is payloads[-1]:
+                logger.exception(
+                    "WeTransfer API request failed status=%s url=%s body=%s",
+                    response_status,
+                    api_url,
+                    response_text,
+                )
+                raise
+            continue
+        data = response.json()
+        break
+    else:
+        if last_exception:
+            raise last_exception
+        data = {}
     download_url = _find_first_string(
         data,
         {"direct_link", "download_url", "directLink", "downloadUrl", "url"},
