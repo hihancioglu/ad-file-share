@@ -36,6 +36,9 @@ mimetypes.add_type("text/csv", ".csv")
 import msal
 import requests
 from functools import lru_cache
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 from flask import (
     Flask,
@@ -217,6 +220,7 @@ def generate_versioned_filename(user_dir: str, desired_name: str, reserved: set[
 MAX_WETRANSFER_REDIRECTS = 5
 MAX_WETRANSFER_API_RETRIES = 3
 WETRANSFER_API_RETRY_BACKOFF = 0.7
+WETRANSFER_PLAYWRIGHT_TIMEOUT = 60
 WETRANSFER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -493,6 +497,86 @@ def fetch_wetransfer_download_link(
         {"name", "filename", "file_name", "fileName", "display_name"},
     )
     return download_url, filename
+
+
+def _maybe_accept_wetransfer_cookies(page) -> None:
+    selectors = [
+        "button:has-text('Accept')",
+        "button:has-text('I agree')",
+        "button:has-text('Agree')",
+        "button:has-text('Kabul')",
+        "button:has-text('Onay')",
+        "button:has-text('Hepsini kabul et')",
+    ]
+    for selector in selectors:
+        locator = page.locator(selector).first
+        if locator.count() and locator.is_visible():
+            locator.click()
+            page.wait_for_timeout(300)
+            break
+
+
+def _trigger_wetransfer_download(page, timeout_ms: int):
+    selectors = [
+        "button:has-text('Download')",
+        "button:has-text('Download all')",
+        "button:has-text('Get your files')",
+        "button:has-text('İndir')",
+        "button:has-text('İndir hepsini')",
+        "a:has-text('Download')",
+        "a:has-text('İndir')",
+    ]
+    for selector in selectors:
+        locator = page.locator(selector).first
+        if not locator.count():
+            continue
+        if not locator.is_visible():
+            continue
+        with page.expect_download(timeout=timeout_ms) as download_info:
+            locator.click()
+        return download_info.value
+    return None
+
+
+def download_wetransfer_with_playwright(
+    url: str,
+    user_dir: str,
+    reserved: set[str],
+    max_size: int,
+) -> tuple[str, str]:
+    logger = logging.getLogger("wetransfer")
+    timeout_ms = WETRANSFER_PLAYWRIGHT_TIMEOUT * 1000
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            _maybe_accept_wetransfer_cookies(page)
+            download = _trigger_wetransfer_download(page, timeout_ms)
+            if download is None:
+                raise RuntimeError("WeTransfer indirme işlemi başlatılamadı")
+            suggested = download.suggested_filename or "wetransfer-file"
+            original_filename = os.path.basename(suggested) or "wetransfer-file"
+            final_name = generate_versioned_filename(user_dir, original_filename, reserved)
+            file_path = os.path.join(user_dir, final_name)
+            download.save_as(file_path)
+            file_size = os.path.getsize(file_path)
+            if file_size > max_size:
+                os.remove(file_path)
+                raise ValueError(
+                    f"Dosya {format_file_size(max_size)} boyut sınırını aşıyor"
+                )
+            logger.debug(
+                "WeTransfer Playwright download completed requester=%s url=%s file=%s",
+                os.path.basename(user_dir),
+                url,
+                final_name,
+            )
+            return final_name, original_filename
+        finally:
+            context.close()
+            browser.close()
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -1587,6 +1671,42 @@ def import_wetransfer_file():
             url,
         )
         return jsonify(success=False, error="WeTransfer bağlantısı alınamadı"), 502
+    user_dir = os.path.join(DATA_DIR, requester)
+    os.makedirs(user_dir, exist_ok=True)
+    reserved = reserved_filenames_for_user(requester)
+
+    try:
+        final_name, original_filename = download_wetransfer_with_playwright(
+            resolved_url,
+            user_dir,
+            reserved,
+            MAX_UPLOAD_SIZE,
+        )
+    except ValueError as exc:
+        return jsonify(success=False, error=str(exc)), 413
+    except (PlaywrightError, PlaywrightTimeoutError, RuntimeError) as exc:
+        logger.warning(
+            "WeTransfer Playwright download failed requester=%s url=%s error=%s",
+            requester,
+            resolved_url,
+            exc,
+        )
+    else:
+        set_file_expiry(
+            requester,
+            final_name,
+            expires_dt,
+            description,
+            original_filename=original_filename,
+        )
+        log_activity(
+            requester,
+            f"{requester} kullanıcısı '{final_name}' dosyasını WeTransfer üzerinden içe aktardı",
+            "import",
+            filename=final_name,
+        )
+        return jsonify(success=True, filename=final_name, url=resolved_url)
+
     download_url = None
     original_filename = None
     transfer_id = None
@@ -1640,9 +1760,6 @@ def import_wetransfer_file():
     )
     original_filename = os.path.basename(original_filename)
 
-    user_dir = os.path.join(DATA_DIR, requester)
-    os.makedirs(user_dir, exist_ok=True)
-    reserved = reserved_filenames_for_user(requester)
     final_name = generate_versioned_filename(user_dir, original_filename, reserved)
     file_path = os.path.join(user_dir, final_name)
 
