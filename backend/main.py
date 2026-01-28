@@ -389,6 +389,20 @@ def extract_wetransfer_transfer_info(
     return None, None, None
 
 
+def extract_wetransfer_csrf_token(html_text: str) -> str | None:
+    match = re.search(
+        r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"',
+        html_text,
+        re.I,
+    )
+    if match:
+        return html.unescape(match.group(1))
+    match = re.search(r'"csrfToken"\s*:\s*"([^"]+)"', html_text)
+    if match:
+        return html.unescape(match.group(1))
+    return None
+
+
 def parse_wetransfer_download_ids(url: str) -> tuple[str | None, str | None, str | None]:
     parsed = urlparse(url)
     parts = [part for part in parsed.path.split("/") if part]
@@ -407,6 +421,7 @@ def fetch_wetransfer_download_link(
     security_hash: str,
     recipient_id: str | None,
     referer: str | None,
+    csrf_token: str | None,
     timeout: tuple[int, int],
 ) -> tuple[str | None, str | None]:
     api_url = f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download"
@@ -424,16 +439,25 @@ def fetch_wetransfer_download_link(
             referer=referer,
             xhr=True,
         )
+        if csrf_token:
+            headers["X-CSRF-Token"] = csrf_token
+            headers["X-XSRF-Token"] = csrf_token
         data = None
+        referer_response = None
+        if referer:
+            referer_response = session_req.get(
+                referer,
+                headers=build_wetransfer_headers(referer=referer),
+                timeout=timeout,
+            )
+            if not csrf_token and referer_response.ok:
+                csrf_token = extract_wetransfer_csrf_token(referer_response.text)
+                if csrf_token:
+                    headers["X-CSRF-Token"] = csrf_token
+                    headers["X-XSRF-Token"] = csrf_token
         for attempt in range(1, MAX_WETRANSFER_API_RETRIES + 1):
             response = None
             try:
-                if referer:
-                    session_req.get(
-                        referer,
-                        headers=build_wetransfer_headers(referer=referer),
-                        timeout=timeout,
-                    )
                 response = session_req.post(
                     api_url,
                     json=payload,
@@ -1712,11 +1736,13 @@ def import_wetransfer_file():
     transfer_id = None
     security_hash = None
     recipient_id = None
+    csrf_token = None
     if page_text:
         download_url, original_filename = extract_wetransfer_download_info(page_text)
         transfer_id, security_hash, recipient_id = extract_wetransfer_transfer_info(
             page_text
         )
+        csrf_token = extract_wetransfer_csrf_token(page_text)
     if not download_url:
         if not (transfer_id and security_hash):
             transfer_id, security_hash, recipient_id = parse_wetransfer_download_ids(
@@ -1729,6 +1755,7 @@ def import_wetransfer_file():
                     security_hash,
                     recipient_id,
                     resolved_url,
+                    csrf_token,
                     timeout=(10, 30),
                 )
             except requests.RequestException:
