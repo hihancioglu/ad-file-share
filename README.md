@@ -74,3 +74,7 @@ python desktop/file_box.py --user alice
 Dropping a file onto the window prompts for the recipient's username. The
 file is then copied into the recipient's box where it will appear in their
 own application window.
+
+## Kullanıcı dökümantasyonu
+
+Türkçe kullanıcı rehberi için `docs/BaylanSend_Kullanici_Talimatlari_Kullanim_Rehberi.md` dosyasına bakabilirsiniz.
