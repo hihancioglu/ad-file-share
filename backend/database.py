@@ -84,6 +84,11 @@ def add_missing_columns():
                     "ALTER TABLE share_links ADD COLUMN download_count INTEGER DEFAULT 0"
                 )
             )
+    if "share_password_hash" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE share_links ADD COLUMN share_password_hash VARCHAR")
+            )
 
     member_cols = [col["name"] for col in inspector.get_columns("team_members")]
     if "accepted" not in member_cols:
