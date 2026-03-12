@@ -34,6 +34,7 @@ mimetypes.add_type("text/csv", ".csv")
 import msal
 import requests
 from functools import lru_cache
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from flask import (
     Flask,
@@ -707,6 +708,7 @@ def create_share_link(
     reject_token: str | None = None,
     purpose: str = "",
     max_downloads: int | None = None,
+    share_password_hash: str | None = None,
 ):
     db = SessionLocal()
     try:
@@ -722,6 +724,7 @@ def create_share_link(
                 rejected=False,
                 purpose=purpose,
                 max_downloads=max_downloads,
+                share_password_hash=share_password_hash,
             )
         )
         db.commit()
@@ -737,6 +740,43 @@ def delete_share_link(username: str, filename: str):
     finally:
         db.close()
 
+
+
+
+def validate_public_link(token: str):
+    cleanup_expired_files()
+    db = SessionLocal()
+    try:
+        link = db.query(ShareLink).filter_by(token=token).first()
+        if link and link.expires_at and link.expires_at < datetime.utcnow():
+            db.delete(link)
+            db.commit()
+            return None, "Bağlantının süresi dolmuş."
+        if not link:
+            return None, "Bağlantının süresi dolmuş."
+        if link.rejected:
+            return None, "Bağlantı reddedildi."
+        if not link.approved:
+            return None, "Bağlantı onay bekliyor."
+        if link.max_downloads and link.download_count >= link.max_downloads:
+            db.delete(link)
+            db.commit()
+            return None, "Bağlantı için izin verilen maksimum indirme sayısına ulaşıldı."
+        return link, None
+    finally:
+        db.close()
+
+
+def public_link_requires_password(link: ShareLink) -> bool:
+    return bool(link and link.share_password_hash)
+
+
+def public_link_password_valid(link: ShareLink, password: str) -> bool:
+    if not public_link_requires_password(link):
+        return True
+    if not password:
+        return False
+    return check_password_hash(link.share_password_hash, password)
 
 def delete_share_notification(username: str, filename: str):
     mgr_user, _, _ = get_manager_info(username)
@@ -1835,6 +1875,7 @@ def share_file():
     days = request.form.get("days")
     purpose = request.form.get("purpose", "").strip()
     max_downloads = request.form.get("max_downloads")
+    share_password = request.form.get("share_password", "").strip()
     if not purpose:
         return jsonify(success=False, error="Kullanım amacı gerekli")
     token = find_share_token(username, filename)
@@ -1867,6 +1908,7 @@ def share_file():
             approve_token = secrets.token_urlsafe(16)
             reject_token = secrets.token_urlsafe(16)
         max_dl = int(max_downloads) if max_downloads and int(max_downloads) > 0 else None
+        share_password_hash = generate_password_hash(share_password) if share_password else None
         create_share_link(
             token,
             username,
@@ -1877,6 +1919,7 @@ def share_file():
             reject_token=reject_token,
             purpose=purpose,
             max_downloads=max_dl,
+            share_password_hash=share_password_hash,
         )
         log_activity(
             username,
@@ -2330,40 +2373,15 @@ def delete_outgoing():
 
 @app.route("/public/<token>", methods=["GET"])
 def public_page(token):
-    cleanup_expired_files()
-    db = SessionLocal()
-    try:
-        link = db.query(ShareLink).filter_by(token=token).first()
-        if link and link.expires_at and link.expires_at < datetime.utcnow():
-            db.delete(link)
-            db.commit()
-            link = None
-    finally:
-        db.close()
+    link, error = validate_public_link(token)
     if not link:
-        return render_template("public.html", error="Bağlantının süresi dolmuş.")
-    if link.rejected:
-        return render_template("public.html", error="Bağlantı reddedildi.")
-    if not link.approved:
-        return render_template("public.html", error="Bağlantı onay bekliyor.")
-    if link.max_downloads and link.download_count >= link.max_downloads:
-        db = SessionLocal()
-        try:
-            link_db = db.query(ShareLink).filter_by(token=token).first()
-            if link_db:
-                db.delete(link_db)
-                db.commit()
-        finally:
-            db.close()
-        return render_template(
-            "public.html", error="Bağlantı için izin verilen maksimum indirme sayısına ulaşıldı."
-        )
+        return render_template("public.html", error=error, token=token, password_protected=False)
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
-        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.", token=token, password_protected=False)
     size = format_file_size(os.path.getsize(file_path))
     uploader = get_full_name(username)
     db = SessionLocal()
@@ -2380,45 +2398,29 @@ def public_page(token):
         size=size,
         description=description,
         expires_at=link.expires_at.strftime("%d/%m/%Y") if link.expires_at else "",
+        password_protected=public_link_requires_password(link),
     )
 
 
-@app.route("/public/<token>/download", methods=["GET"])
+@app.route("/public/<token>/download", methods=["GET", "POST"])
+
 def public_download_file(token):
-    cleanup_expired_files()
-    db = SessionLocal()
-    try:
-        link = db.query(ShareLink).filter_by(token=token).first()
-        if link and link.expires_at and link.expires_at < datetime.utcnow():
-            db.delete(link)
-            db.commit()
-            link = None
-    finally:
-        db.close()
+    link, error = validate_public_link(token)
     if not link:
-        return render_template("public.html", error="Bağlantının süresi dolmuş.")
-    if link.rejected:
-        return render_template("public.html", error="Bağlantı reddedildi.")
-    if not link.approved:
-        return render_template("public.html", error="Bağlantı onay bekliyor.")
-    if link.max_downloads and link.download_count >= link.max_downloads:
-        db = SessionLocal()
-        try:
-            link_db = db.query(ShareLink).filter_by(token=token).first()
-            if link_db:
-                db.delete(link_db)
-                db.commit()
-        finally:
-            db.close()
-        return render_template(
-            "public.html", error="Bağlantı için izin verilen maksimum indirme sayısına ulaşıldı."
-        )
+        return render_template("public.html", error=error, token=token, password_protected=False)
     username = link.username
     filename = link.filename
     user_dir = os.path.join(DATA_DIR, username)
     file_path = os.path.join(user_dir, filename)
     if not os.path.exists(file_path):
-        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.")
+        return render_template("public.html", error="Dosya sunucudan kaldırılmıştır.", token=token, password_protected=False)
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        password = (payload.get("password") or "").strip()
+        if not public_link_password_valid(link, password):
+            return jsonify(success=False, error="Şifre hatalı"), 403
+    elif public_link_requires_password(link):
+        return render_template("public.html", error="İndirme için şifre doğrulaması gerekli.", token=token, password_protected=False)
     log_download(username, filename, session.get("username"), token)
     return send_file(file_path, as_attachment=True, download_name=filename)
 

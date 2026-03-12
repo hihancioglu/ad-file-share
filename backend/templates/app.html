@@ -380,6 +380,8 @@
         <input type="text" id="share-purpose" class="form-control" placeholder="Zorunlu" required>
         <label class="form-label mt-3">Maksimum İndirme Sayısı</label>
         <input type="number" id="share-max-downloads" class="form-control" min="1" placeholder="Opsiyonel">
+        <label class="form-label mt-3">Paylaşım Şifresi</label>
+        <input type="password" id="share-password" class="form-control" placeholder="Opsiyonel">
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
@@ -1625,6 +1627,7 @@ publicShareBtn.addEventListener('click', () => {
             msgAlert.classList.add('d-none');
         }
         document.getElementById('share-max-downloads').value = '';
+        document.getElementById('share-password').value = '';
         modal.show();
     }
 });
@@ -1638,6 +1641,7 @@ document.getElementById('share-confirm').addEventListener('click', async () => {
         return;
     }
     const maxDownloads = document.getElementById('share-max-downloads').value;
+    const sharePassword = document.getElementById('share-password').value;
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', shareFileName);
@@ -1645,6 +1649,9 @@ document.getElementById('share-confirm').addEventListener('click', async () => {
     formData.append('purpose', purpose);
     if (maxDownloads) {
         formData.append('max_downloads', maxDownloads);
+    }
+    if (sharePassword) {
+        formData.append('share_password', sharePassword);
     }
     await fetch('/share', { method: 'POST', body: formData });
     bootstrap.Modal.getInstance(document.getElementById('shareLinkModal')).hide();
