@@ -184,7 +184,7 @@
                 <button id="share-selected" class="btn btn-primary me-2" disabled>Kullanıcıya Gönder</button>
                 <button id="public-share" class="btn btn-outline-primary me-2" disabled>Paylaş</button>
                 <button id="add-to-team" class="btn btn-secondary me-2" disabled>Gruba Ekle</button>
-                <input type="text" id="file-search" class="form-control me-2" placeholder="Ara..." style="width:auto; max-width:200px;">
+                <input type="search" id="file-search" name="file_search" class="form-control me-2" placeholder="Ara..." style="width:auto; max-width:200px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" readonly onfocus="this.removeAttribute('readonly');">
                 <select id="page-size" class="form-select" style="width:auto;">
                     <option value="15" selected>15</option>
                     <option value="30">30</option>
@@ -562,6 +562,8 @@ const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 const publicShareBtn = document.getElementById('public-share');
 const searchInput = document.getElementById('file-search');
+searchInput.value = '';
+searchInput.setAttribute('autocomplete', 'off');
 const pageSizeSelect = document.getElementById('page-size');
 const pagination = document.getElementById('file-pagination');
 const userSearch = document.getElementById('user-search');
