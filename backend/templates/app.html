@@ -382,6 +382,12 @@
         <input type="number" id="share-max-downloads" class="form-control" min="1" placeholder="Opsiyonel">
         <label class="form-label mt-3">Paylaşım Şifresi</label>
         <input type="password" id="share-password" class="form-control" placeholder="Opsiyonel">
+        <div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" id="share-internal-only">
+          <label class="form-check-label" for="share-internal-only">
+            Kurum içi (onaysız, sadece send.baylan.local üzerinden erişim)
+          </label>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="share-confirm">Paylaş</button>
@@ -561,6 +567,7 @@ const editBtn = document.getElementById('edit-selected');
 const shareBtn = document.getElementById('share-selected');
 const addToTeamBtn = document.getElementById('add-to-team');
 const publicShareBtn = document.getElementById('public-share');
+const shareInternalOnlyCheckbox = document.getElementById('share-internal-only');
 const searchInput = document.getElementById('file-search');
 searchInput.value = '';
 searchInput.setAttribute('autocomplete', 'off');
@@ -1630,7 +1637,19 @@ publicShareBtn.addEventListener('click', () => {
         }
         document.getElementById('share-max-downloads').value = '';
         document.getElementById('share-password').value = '';
+        shareInternalOnlyCheckbox.checked = false;
         modal.show();
+    }
+});
+
+shareInternalOnlyCheckbox.addEventListener('change', () => {
+    const msgAlert = document.getElementById('manager-approval-alert');
+    if (shareInternalOnlyCheckbox.checked) {
+        msgAlert.classList.add('d-none');
+        return;
+    }
+    if (managerName) {
+        msgAlert.classList.remove('d-none');
     }
 });
 
@@ -1644,6 +1663,7 @@ document.getElementById('share-confirm').addEventListener('click', async () => {
     }
     const maxDownloads = document.getElementById('share-max-downloads').value;
     const sharePassword = document.getElementById('share-password').value;
+    const internalOnly = shareInternalOnlyCheckbox.checked;
     const formData = new FormData();
     formData.append('username', username);
     formData.append('filename', shareFileName);
@@ -1654,6 +1674,9 @@ document.getElementById('share-confirm').addEventListener('click', async () => {
     }
     if (sharePassword) {
         formData.append('share_password', sharePassword);
+    }
+    if (internalOnly) {
+        formData.append('internal_only', '1');
     }
     await fetch('/share', { method: 'POST', body: formData });
     bootstrap.Modal.getInstance(document.getElementById('shareLinkModal')).hide();

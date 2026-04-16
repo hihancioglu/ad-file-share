@@ -19,6 +19,7 @@ class ShareLink(Base):
     max_downloads = Column(Integer, nullable=True)
     download_count = Column(Integer, default=0)
     share_password_hash = Column(String, nullable=True)
+    is_internal = Column(Boolean, default=False)
 
 
 class DownloadLog(Base):
