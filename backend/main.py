@@ -10,6 +10,7 @@ import time
 import zipfile
 import ipaddress
 import html
+from urllib.parse import urlparse
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -71,6 +72,8 @@ add_missing_columns()
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://sendv2.baylan.info.tr").rstrip("/")
 LOGIN_BASE_URL = os.getenv("LOGIN_BASE_URL", "https://send.baylan.local").rstrip("/")
+INTERNAL_BASE_URL = os.getenv("INTERNAL_BASE_URL", "https://send.baylan.local").rstrip("/")
+INTERNAL_HOST = (urlparse(INTERNAL_BASE_URL).hostname or "").lower()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
@@ -709,6 +712,7 @@ def create_share_link(
     purpose: str = "",
     max_downloads: int | None = None,
     share_password_hash: str | None = None,
+    is_internal: bool = False,
 ):
     db = SessionLocal()
     try:
@@ -725,6 +729,7 @@ def create_share_link(
                 purpose=purpose,
                 max_downloads=max_downloads,
                 share_password_hash=share_password_hash,
+                is_internal=is_internal,
             )
         )
         db.commit()
@@ -739,6 +744,16 @@ def delete_share_link(username: str, filename: str):
         db.commit()
     finally:
         db.close()
+
+
+def get_share_base_url(link: ShareLink | None = None, is_internal: bool = False) -> str:
+    if link is not None:
+        return INTERNAL_BASE_URL if bool(link.is_internal) else PUBLIC_BASE_URL
+    return INTERNAL_BASE_URL if is_internal else PUBLIC_BASE_URL
+
+
+def request_host() -> str:
+    return request.host.split(":")[0].strip().lower()
 
 
 
@@ -758,6 +773,8 @@ def validate_public_link(token: str):
             return None, "Bağlantı reddedildi."
         if not link.approved:
             return None, "Bağlantı onay bekliyor."
+        if bool(link.is_internal) and request_host() != INTERNAL_HOST:
+            return None, "Bu bağlantı yalnızca kurum içinden erişilebilir."
         if link.max_downloads and link.download_count >= link.max_downloads:
             db.delete(link)
             db.commit()
@@ -1342,6 +1359,7 @@ def list_files():
                     "rejected": l.rejected,
                     "max_downloads": l.max_downloads,
                     "download_count": l.download_count or 0,
+                    "is_internal": bool(l.is_internal),
                 }
                 for l in db.query(ShareLink)
                 .filter_by(username=username)
@@ -1408,7 +1426,7 @@ def list_files():
                     "public_expires_in": format_remaining(link_exp - now)
                     if link_exp
                     else "",
-                    "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
+                    "link": f"{get_share_base_url(is_internal=link_info.get('is_internal', False))}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
                     "manager_name": mgr_name,
@@ -1416,6 +1434,7 @@ def list_files():
                     "message_count": msg_counts.get(filename, 0),
                     "max_downloads": max_dl,
                     "remaining_downloads": remaining_dl,
+                    "is_internal": link_info.get("is_internal", False),
                 }
             )
         files.sort(key=lambda f: f["added_ts"], reverse=True)
@@ -1442,6 +1461,7 @@ def list_files():
                 "rejected": l.rejected,
                 "max_downloads": l.max_downloads,
                 "download_count": l.download_count or 0,
+                "is_internal": bool(l.is_internal),
             }
             for l in db.query(ShareLink)
             .filter(ShareLink.rejected == False)
@@ -1521,7 +1541,7 @@ def list_files():
                     "public_expires_in": format_remaining(link_exp - now)
                     if link_exp
                     else "",
-                    "link": f"{PUBLIC_BASE_URL}/public/{token}" if token and not rejected else "",
+                    "link": f"{get_share_base_url(is_internal=link_info.get('is_internal', False))}/public/{token}" if token and not rejected else "",
                     "approved": approved,
                     "rejected": rejected,
                     "manager_name": mgr_name,
@@ -1529,6 +1549,7 @@ def list_files():
                     "message_count": msg_counts.get((user, filename), 0),
                     "max_downloads": max_dl,
                     "remaining_downloads": remaining_dl,
+                    "is_internal": link_info.get("is_internal", False),
                 }
             )
     files.sort(key=lambda f: f["added_ts"], reverse=True)
@@ -1876,6 +1897,7 @@ def share_file():
     purpose = request.form.get("purpose", "").strip()
     max_downloads = request.form.get("max_downloads")
     share_password = request.form.get("share_password", "").strip()
+    internal_only = request.form.get("internal_only", "0") == "1"
     if not purpose:
         return jsonify(success=False, error="Kullanım amacı gerekli")
     token = find_share_token(username, filename)
@@ -1898,8 +1920,8 @@ def share_file():
             if not expires_at or expires_at > file_exp:
                 expires_at = file_exp
         approver_user, approver_email, _ = get_manager_info(username)
-        auto_approve = is_admin(username) or not approver_user
-        if not approver_user:
+        auto_approve = internal_only or is_admin(username) or not approver_user
+        if not internal_only and not approver_user:
             approver_user = next(iter(ADMIN_USERS), None)
             approver_email = get_user_email(approver_user) if approver_user else ""
         approve_token = None
@@ -1920,6 +1942,7 @@ def share_file():
             purpose=purpose,
             max_downloads=max_dl,
             share_password_hash=share_password_hash,
+            is_internal=internal_only,
         )
         log_activity(
             username,
@@ -1932,7 +1955,7 @@ def share_file():
                 username,
                 f"'{filename}' paylaşımı onaylandı",
             )
-        else:
+        elif not internal_only:
             send_approval_email(
                 username,
                 filename,
@@ -1947,7 +1970,7 @@ def share_file():
                     approver_user,
                     f"'{filename}' dosyası için onay bekleyen paylaşım",
                 )
-    return jsonify(success=True, link=f"{PUBLIC_BASE_URL}/public/{token}")
+    return jsonify(success=True, link=f"{get_share_base_url(is_internal=internal_only)}/public/{token}")
 
 
 @app.route("/share/delete", methods=["POST"])

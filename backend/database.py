@@ -89,6 +89,11 @@ def add_missing_columns():
             conn.execute(
                 text("ALTER TABLE share_links ADD COLUMN share_password_hash VARCHAR")
             )
+    if "is_internal" not in share_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE share_links ADD COLUMN is_internal BOOLEAN DEFAULT FALSE")
+            )
 
     member_cols = [col["name"] for col in inspector.get_columns("team_members")]
     if "accepted" not in member_cols:
