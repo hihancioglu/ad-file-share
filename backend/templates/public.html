@@ -98,10 +98,13 @@ function triggerDownloadFromBlob(blob, filename) {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || '';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    }, 1000);
 }
 
 async function requestProtectedDownload(password) {
