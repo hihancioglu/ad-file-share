@@ -101,10 +101,10 @@ function triggerDownloadFromBlob(blob, filename) {
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => {
+    requestAnimationFrame(() => {
         a.remove();
         window.URL.revokeObjectURL(url);
-    }, 1000);
+    });
 }
 
 async function requestProtectedDownload(password) {
