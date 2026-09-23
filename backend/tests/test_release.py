@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
@@ -13,6 +14,7 @@ os.environ["FLASK_SECRET_KEY"] = "test-secret"
 
 import main  # noqa: E402
 from release_service import (  # noqa: E402
+    _NexusStreamBody,
     NexusSettings,
     NexusUploadError,
     asset_exists_on_nexus,
@@ -135,20 +137,69 @@ def test_promote_requires_exact_catalog_asset(client, change, message):
     promote.assert_not_called()
 
 
-def test_promote_helper_streams_and_always_closes(nexus_settings):
+def test_sized_nexus_stream_body_prepares_and_streams_without_using_raw():
+    source = Mock()
+    source.raw = type("HTTPResponse", (), {})()
+    source.iter_content.return_value = iter([b"a" * 12, b"", b"b" * 25])
+    body = _NexusStreamBody(source, 37)
+
+    prepared = requests.Request("PUT", "https://repo.example/file", data=body).prepare()
+
+    assert prepared.headers["Content-Length"] == "37"
+    assert "Transfer-Encoding" not in prepared.headers
+    assert prepared.body is body
+    assert list(body) == [b"a" * 12, b"b" * 25]
+    source.iter_content.assert_called_once_with(chunk_size=1024 * 1024)
+
+
+@pytest.mark.parametrize(
+    ("file_size", "expected_body", "expected_length"),
+    [(37, "sized", "37"), (0, b"", "0"), (None, "unsized", None)],
+)
+def test_promote_helper_streams_and_always_closes(
+    nexus_settings, file_size, expected_body, expected_length
+):
     source = type("Source", (), {})()
     source.status_code = 200
-    source.raw = type("Raw", (), {"decode_content": True})()
+    source.raw = type("HTTPResponse", (), {})()
+    source.iter_content = Mock(return_value=iter([b"one", b"", b"two"]))
     source.close = Mock()
     target = type("Target", (), {"status_code": 201})()
     with patch("release_service.requests.get", return_value=source) as get, patch("release_service.requests.put", return_value=target) as put:
-        url = promote_nexus_asset(settings=nexus_settings, archive_repository="archive", archive_path="App/1/a.exe", latest_repository="latest", latest_path="App/setup.exe", username="publisher", password="secret", file_size=123)
+        url = promote_nexus_asset(settings=nexus_settings, archive_repository="archive", archive_path="App/1/a.exe", latest_repository="latest", latest_path="App/setup.exe", username="publisher", password="secret", file_size=file_size)
     assert url == "https://repo.example/repository/latest/App/setup.exe"
     assert get.call_args.kwargs["stream"] is True
+    assert get.call_args.kwargs["headers"] == {"Accept-Encoding": "identity"}
     assert get.call_args.kwargs["auth"] == ("", "")
-    assert put.call_args.kwargs["data"] is source.raw
     assert put.call_args.kwargs["auth"] == ("publisher", "secret")
-    assert put.call_args.kwargs["headers"]["Content-Length"] == "123"
+    assert "Content-Length" not in put.call_args.kwargs["headers"]
+    body = put.call_args.kwargs["data"]
+    assert body is not source.raw
+    if expected_body == "sized":
+        prepared = requests.Request("PUT", "https://repo.example/file", data=body).prepare()
+        assert prepared.headers["Content-Length"] == expected_length
+        assert list(body) == [b"one", b"two"]
+    elif expected_body == "unsized":
+        prepared = requests.Request("PUT", "https://repo.example/file", data=body).prepare()
+        assert prepared.headers["Transfer-Encoding"] == "chunked"
+        assert "Content-Length" not in prepared.headers
+        assert list(body) == [b"one", b"two"]
+    else:
+        assert body == expected_body
+    source.close.assert_called_once()
+
+
+def test_promote_helper_closes_source_when_put_fails(nexus_settings):
+    source = Mock(status_code=200)
+    source.iter_content.return_value = iter([b"content"])
+    with patch("release_service.requests.get", return_value=source), patch(
+        "release_service.requests.put",
+        side_effect=requests.exceptions.ChunkedEncodingError("broken"),
+    ):
+        with pytest.raises(NexusUploadError) as error:
+            promote_nexus_asset(settings=nexus_settings, archive_repository="archive", archive_path="App/1/a.exe", latest_repository="latest", latest_path="App/setup.exe", username="publisher", password="secret", file_size=None)
+    assert error.value.status_code == 502
+    assert "secret" not in str(error.value)
     source.close.assert_called_once()
 
 

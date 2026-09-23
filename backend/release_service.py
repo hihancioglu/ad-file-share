@@ -36,6 +36,29 @@ class NexusCatalogError(Exception):
         self.status_code = status_code
 
 
+class _NexusStreamBody:
+    """A sized iterable that streams a response without exposing its raw socket."""
+
+    def __init__(self, response: requests.Response, content_length: int) -> None:
+        self.response = response
+        self.content_length = int(content_length)
+        if self.content_length < 0:
+            raise ValueError("content_length must not be negative")
+
+    def __iter__(self):
+        yield from _iter_nexus_response(self.response)
+
+    def __len__(self) -> int:
+        return self.content_length
+
+
+def _iter_nexus_response(response: requests.Response):
+    """Yield non-empty response chunks for an upload request body."""
+    for chunk in response.iter_content(chunk_size=1024 * 1024):
+        if chunk:
+            yield chunk
+
+
 @dataclass(frozen=True)
 class NexusSettings:
     upload_base_url: str
@@ -436,6 +459,7 @@ def promote_nexus_asset(
                 source_url,
                 stream=True,
                 auth=(settings.catalog_username, settings.catalog_password),
+                headers={"Accept-Encoding": "identity"},
                 verify=settings.verify,
                 timeout=settings.timeout,
             )
@@ -462,19 +486,23 @@ def promote_nexus_asset(
                 raise NexusUploadError("Nexus sunucusunda hata oluştu.", 502)
             raise NexusUploadError("Nexus arşiv dosyası okunamadı.", 502)
 
-        # urllib3's raw response is a file-like streaming body.  Disabling
-        # transparent decoding also keeps an optional catalog Content-Length valid.
-        source.raw.decode_content = False
         headers = {"Content-Type": content_type or "application/octet-stream"}
-        if file_size is not None:
-            headers["Content-Length"] = str(file_size)
+        if file_size == 0:
+            body = b""
+        elif file_size is None:
+            # An unsized iterator makes requests use chunked transfer encoding.
+            body = _iter_nexus_response(source)
+        else:
+            # A sized iterable lets requests derive Content-Length itself, without
+            # treating urllib3's HTTPResponse as a seekable file object.
+            body = _NexusStreamBody(source, file_size)
         target_url = build_nexus_url(
             settings.upload_base_url, latest_repository, latest_path
         )
         try:
             target = requests.put(
                 target_url,
-                data=source.raw,
+                data=body,
                 auth=(username, password),
                 headers=headers,
                 verify=settings.verify,
