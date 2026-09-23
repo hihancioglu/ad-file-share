@@ -12,7 +12,12 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["FLASK_SECRET_KEY"] = "test-secret"
 
 import main  # noqa: E402
-from release_service import NexusUploadError  # noqa: E402
+from release_service import (  # noqa: E402
+    NexusSettings,
+    NexusUploadError,
+    asset_exists_on_nexus,
+    upload_to_nexus,
+)
 
 
 @pytest.fixture
@@ -79,6 +84,8 @@ def test_publish_rejects_invalid_paths_and_visibility(client, overrides):
 def test_publish_uploads_archive_then_latest(client):
     login(client)
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ) as exists, patch.object(
         main,
         "upload_to_nexus",
         side_effect=["https://repo/archive", "https://repo/latest"],
@@ -100,6 +107,8 @@ def test_publish_uploads_archive_then_latest(client):
         "apps-public-latest",
     ]
     assert all(call.kwargs["username"] == "publisher" for call in upload.call_args_list)
+    exists.assert_called_once()
+    assert exists.call_args.kwargs["repository"] == "apps-public"
     audit.assert_called_once()
 
 
@@ -107,6 +116,8 @@ def test_archive_failure_does_not_upload_latest(client):
     login(client)
     error = NexusUploadError("Nexus sunucusunda hata oluştu.", 502)
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(
         main, "upload_to_nexus", side_effect=error
     ) as upload:
         response = client.post("/release/publish", data=publish_form())
@@ -120,6 +131,8 @@ def test_latest_failure_returns_partial_without_deleting_archive(client):
         "Nexus üzerinde yayınlama yetkiniz bulunmuyor.", 403
     )
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(
         main, "upload_to_nexus", side_effect=["https://repo/archive", latest_error]
     ), patch.object(main, "log_activity") as audit:
         response = client.post("/release/publish", data=publish_form())
@@ -163,9 +176,132 @@ def test_publish_latest_only_uses_latest_repository(client):
 def test_nexus_errors_are_returned_safely(client, error, status, message):
     login(client)
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(
         main, "upload_to_nexus", side_effect=error
     ):
         response = client.post("/release/publish", data=publish_form())
     assert response.status_code == status
     assert response.get_json()["error"] == message
     assert "never-store-this" not in response.get_data(as_text=True)
+
+
+def test_existing_archive_returns_conflict_without_put(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=True
+    ) as exists, patch.object(main, "upload_to_nexus") as upload:
+        response = client.post("/release/publish", data=publish_form())
+
+    assert response.status_code == 409
+    assert response.get_json() == {
+        "success": False,
+        "partial": False,
+        "archive_uploaded": False,
+        "latest_uploaded": False,
+        "error": "Bu uygulama sürümü daha önce yayınlanmış.",
+    }
+    exists.assert_called_once()
+    upload.assert_not_called()
+
+
+def test_latest_publish_does_not_check_asset_existence(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus"
+    ) as exists, patch.object(
+        main, "upload_to_nexus", return_value="https://repo/latest"
+    ), patch.object(main, "log_activity"):
+        response = client.post("/release/publish-latest", data=latest_form())
+    assert response.status_code == 200
+    exists.assert_not_called()
+
+
+@pytest.fixture
+def nexus_settings():
+    return NexusSettings(
+        upload_base_url="https://nexus.example",
+        public_base_url="https://repo.example",
+        repositories={"public": ("archive", "latest")},
+        verify="/ca.pem",
+        timeout=(3.0, 7.0),
+    )
+
+
+@pytest.mark.parametrize(("status", "expected"), [(200, True), (204, True), (404, False)])
+def test_asset_exists_on_nexus_statuses(nexus_settings, status, expected):
+    with patch("release_service.requests.head") as head:
+        head.return_value.status_code = status
+        assert asset_exists_on_nexus(
+            settings=nexus_settings,
+            repository="archive",
+            asset_path="App/1.0/setup.exe",
+            username="publisher",
+            password="secret",
+        ) is expected
+    head.assert_called_once_with(
+        "https://nexus.example/repository/archive/App/1.0/setup.exe",
+        auth=("publisher", "secret"),
+        verify="/ca.pem",
+        timeout=(3.0, 7.0),
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        (401, "Nexus kullanıcı adı veya parola hatalı."),
+        (403, "Nexus üzerinde yayınlama yetkiniz bulunmuyor."),
+    ],
+)
+def test_asset_exists_translates_auth_errors(nexus_settings, status, message):
+    with patch("release_service.requests.head") as head:
+        head.return_value.status_code = status
+        with pytest.raises(NexusUploadError, match=message) as caught:
+            asset_exists_on_nexus(
+                settings=nexus_settings,
+                repository="archive",
+                asset_path="App/1.0/setup.exe",
+                username="publisher",
+                password="secret",
+            )
+    assert caught.value.status_code == status
+
+
+def test_asset_exists_translates_timeout_safely(nexus_settings):
+    with patch("release_service.requests.head", side_effect=main.requests.Timeout):
+        with pytest.raises(NexusUploadError) as caught:
+            asset_exists_on_nexus(
+                settings=nexus_settings,
+                repository="archive",
+                asset_path="App/1.0/setup.exe",
+                username="publisher",
+                password="secret",
+            )
+    assert caught.value.status_code == 504
+    assert caught.value.message == "Nexus bağlantısı zaman aşımına uğradı."
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Repository does not allow updating assets",
+        "Asset already exists",
+        "Cannot be modified",
+    ],
+)
+def test_archive_put_recognizes_additional_duplicate_messages(nexus_settings, body):
+    with patch("release_service.requests.put") as put:
+        put.return_value.status_code = 400
+        put.return_value.text = body
+        with pytest.raises(NexusUploadError) as caught:
+            upload_to_nexus(
+                settings=nexus_settings,
+                repository="archive",
+                asset_path="App/1.0/setup.exe",
+                stream=io.BytesIO(b"content"),
+                username="publisher",
+                password="secret",
+            )
+    assert caught.value.status_code == 409
+    assert caught.value.message == "Bu uygulama sürümü daha önce yayınlanmış."
