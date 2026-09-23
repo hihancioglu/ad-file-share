@@ -230,7 +230,7 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
                 continue
             app, version, filename = parts
             entry = grouped.setdefault(app, {"archive": {}, "latest": []})
-            file_data = {key: asset[key] for key in ("file_size", "last_modified", "checksum_algorithm", "checksum_value")}
+            file_data = {key: asset[key] for key in ("content_type", "file_size", "last_modified", "checksum_algorithm", "checksum_value")}
             file_data.update(filename=filename, url=build_nexus_url(settings.public_base_url, archive_repo, asset["path"]))
             entry["archive"].setdefault(version, []).append(file_data)
         for asset in search_nexus_assets(settings, latest_repo):
@@ -244,7 +244,7 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
                 for version, files in entry["archive"].items():
                     if any(f["checksum_algorithm"] == asset["checksum_algorithm"] and f["checksum_value"] == asset["checksum_value"] for f in files):
                         matches.add(version)
-            latest = {key: asset[key] for key in ("file_size", "last_modified", "checksum_algorithm", "checksum_value")}
+            latest = {key: asset[key] for key in ("content_type", "file_size", "last_modified", "checksum_algorithm", "checksum_value")}
             latest.update(filename=filename, url=build_nexus_url(settings.public_base_url, latest_repo, asset["path"]))
             if len(matches) == 1:
                 latest.update(version=next(iter(matches)), detection="checksum")
@@ -266,6 +266,39 @@ _catalog_cache: dict[tuple, tuple[float, list[dict]]] = {}
 def clear_catalog_cache() -> None:
     with _catalog_cache_lock:
         _catalog_cache.clear()
+
+
+def resolve_latest_filename(
+    application: str, uploaded_filename: str, catalog_item: dict | None
+) -> str:
+    """Choose the existing stable asset safely, or derive it for a new app."""
+    latest_files = (catalog_item or {}).get("latest_files") or []
+    if len(latest_files) == 1:
+        return sanitize_release_filename(
+            latest_files[0].get("filename"), "latest filename"
+        )
+
+    extension = os.path.splitext(uploaded_filename)[1]
+    if not extension:
+        if latest_files:
+            raise ReleaseValidationError(
+                "Bu uygulama için sabit link dosyası otomatik belirlenemedi."
+            )
+        raise ReleaseValidationError("Sabit link dosya adı otomatik belirlenemedi.")
+
+    if not latest_files:
+        return sanitize_release_filename(f"{application}{extension}", "latest filename")
+
+    matches = [
+        item.get("filename")
+        for item in latest_files
+        if os.path.splitext(item.get("filename") or "")[1].lower() == extension.lower()
+    ]
+    if len(matches) == 1:
+        return sanitize_release_filename(matches[0], "latest filename")
+    raise ReleaseValidationError(
+        "Bu uygulama için sabit link dosyası otomatik belirlenemedi."
+    )
 
 
 def get_release_catalog(settings: NexusSettings) -> list[dict]:
