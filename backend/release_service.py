@@ -1,6 +1,8 @@
 """Validation, repository selection, and Nexus uploads for release publishing."""
 
 from dataclasses import dataclass
+import io
+import json
 import os
 import re
 import threading
@@ -12,6 +14,8 @@ from packaging.version import InvalidVersion, Version
 from werkzeug.utils import secure_filename
 
 _RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
+_METADATA_DIRECTORY = ".baylan-release"
+_METADATA_MAX_BYTES = 64 * 1024
 
 
 class ReleaseValidationError(ValueError):
@@ -242,6 +246,67 @@ def _version_sort(versions: list[str]) -> list[str]:
     return [v for _, v in sorted(valid, reverse=True)] + sorted(invalid)
 
 
+def release_metadata_path(application: str, latest_filename: str) -> str:
+    """Return the internal sidecar path for a latest asset."""
+    return f"{application}/{_METADATA_DIRECTORY}/{latest_filename}.json"
+
+
+def _read_release_metadata(
+    settings: NexusSettings, repository: str, asset_path: str
+) -> dict | None:
+    """Read a small sidecar with the catalog account; malformed data is optional."""
+    try:
+        response = requests.get(
+            build_nexus_url(settings.upload_base_url, repository, asset_path),
+            stream=True,
+            auth=(settings.catalog_username, settings.catalog_password),
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            verify=settings.verify,
+            timeout=settings.timeout,
+        )
+        if not 200 <= response.status_code < 300:
+            return None
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=8192):
+            body.extend(chunk)
+            if len(body) > _METADATA_MAX_BYTES:
+                return None
+        value = json.loads(body)
+        return value if isinstance(value, dict) else None
+    except (requests.RequestException, ValueError, TypeError, UnicodeDecodeError):
+        return None
+    finally:
+        if "response" in locals():
+            response.close()
+
+
+def upload_release_metadata(
+    *, settings: NexusSettings, repository: str, application: str,
+    version: str, source_filename: str, latest_filename: str,
+    username: str, password: str,
+) -> str:
+    """Write only validated release identity fields to the latest repository."""
+    application = sanitize_release_segment(application, "application")
+    version = sanitize_release_segment(version, "version")
+    source_filename = sanitize_release_filename(source_filename, "kaynak dosya adı")
+    latest_filename = sanitize_release_filename(latest_filename, "latest filename")
+    payload = json.dumps(
+        {"version": version, "source_filename": source_filename,
+         "latest_filename": latest_filename},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return upload_to_nexus(
+        settings=settings,
+        repository=repository,
+        asset_path=release_metadata_path(application, latest_filename),
+        stream=io.BytesIO(payload),
+        username=username,
+        password=password,
+        content_type="application/json",
+    )
+
+
 def build_release_catalog(settings: NexusSettings) -> list[dict]:
     """Scan configured repositories and construct application/visibility records."""
     catalog = []
@@ -256,12 +321,35 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
             file_data = {key: asset[key] for key in ("content_type", "file_size", "last_modified", "checksum_algorithm", "checksum_value")}
             file_data.update(filename=filename, url=build_nexus_url(settings.public_base_url, archive_repo, asset["path"]))
             entry["archive"].setdefault(version, []).append(file_data)
-        for asset in search_nexus_assets(settings, latest_repo):
+        latest_assets = search_nexus_assets(settings, latest_repo)
+        metadata_assets = {
+            asset["path"]: asset
+            for asset in latest_assets
+            if len(asset["path"].split("/")) == 3
+            and asset["path"].split("/")[1] == _METADATA_DIRECTORY
+        }
+        for asset in latest_assets:
             parts = asset["path"].split("/")
             if len(parts) != 2 or not _valid_segment(parts[0], "application") or not parts[1]:
                 continue
             app, filename = parts
             entry = grouped.setdefault(app, {"archive": {}, "latest": []})
+            metadata = None
+            metadata_path = release_metadata_path(app, filename)
+            if metadata_path in metadata_assets:
+                candidate = _read_release_metadata(settings, latest_repo, metadata_path)
+                try:
+                    if candidate is not None:
+                        metadata_version = sanitize_release_segment(candidate.get("version"), "version")
+                        source_filename = sanitize_release_filename(candidate.get("source_filename"), "kaynak dosya adı")
+                        metadata_filename = sanitize_release_filename(candidate.get("latest_filename"), "latest filename")
+                        if metadata_filename == filename and any(
+                            item["filename"] == source_filename
+                            for item in entry["archive"].get(metadata_version, [])
+                        ):
+                            metadata = (metadata_version, source_filename)
+                except (ReleaseValidationError, AttributeError):
+                    metadata = None
             matches = set()
             if asset["checksum_algorithm"] and asset["checksum_value"]:
                 for version, files in entry["archive"].items():
@@ -269,7 +357,9 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
                         matches.add(version)
             latest = {key: asset[key] for key in ("content_type", "file_size", "last_modified", "checksum_algorithm", "checksum_value")}
             latest.update(filename=filename, url=build_nexus_url(settings.public_base_url, latest_repo, asset["path"]))
-            if len(matches) == 1:
+            if metadata is not None:
+                latest.update(version=metadata[0], source_filename=metadata[1], detection="metadata")
+            elif len(matches) == 1:
                 latest.update(version=next(iter(matches)), detection="checksum")
             elif len(matches) > 1:
                 latest.update(version=None, detection="ambiguous", matching_versions=_version_sort(list(matches)))

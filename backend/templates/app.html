@@ -835,7 +835,7 @@ function populateReleaseApplications() {
 }
 
 function latestDisplay(item) {
-    if (item.latest_detection === 'checksum') return item.latest_version || 'Belirlenemedi';
+    if (item.latest_detection === 'checksum' || item.latest_detection === 'metadata') return item.latest_version || 'Belirlenemedi';
     return item.latest_detection === 'ambiguous' ? 'Birden fazla eşleşme' : 'Belirlenemedi';
 }
 
@@ -849,8 +849,8 @@ async function loadPublishApplicationDetail() {
         const response = await fetch(`/release/apps/${encodeURIComponent(visibility)}/${encodeURIComponent(application)}`, { cache:'no-store' });
         const item = await response.json();
         if (!response.ok) throw new Error(item.error || 'Uygulama bilgisi yüklenemedi.');
-        const reliable = item.latest_files.length && item.latest_files.every(x => x.detection === 'checksum');
-        const versions = new Set(item.latest_files.filter(x => x.detection === 'checksum').map(x => x.version));
+        const reliable = item.latest_files.length && item.latest_files.every(x => x.detection === 'checksum' || x.detection === 'metadata');
+        const versions = new Set(item.latest_files.filter(x => x.detection === 'checksum' || x.detection === 'metadata').map(x => x.version));
         const current = reliable && versions.size === 1 ? [...versions][0] : 'Belirlenemedi';
         const stable = item.latest_files.length === 1 ? item.latest_files[0].filename : (item.latest_files.map(x => x.filename).join(', ') || '—');
         info.replaceChildren();
@@ -874,7 +874,7 @@ function renderReleaseApps() {
         values.forEach((value,index) => {
             const cell=document.createElement('td');
             if (index===1) cell.append(visibilityBadge(item.visibility));
-            else if (index===2) { const span=document.createElement('span'); span.textContent=latestDisplay(item); if(item.latest_detection!=='checksum') span.className='badge text-bg-warning'; cell.append(span); }
+            else if (index===2) { const span=document.createElement('span'); span.textContent=latestDisplay(item); if(item.latest_detection!=='checksum' && item.latest_detection!=='metadata') span.className='badge text-bg-warning'; cell.append(span); }
             else if(index===5) { const button=document.createElement('button'); button.type='button'; button.className='btn btn-sm btn-outline-primary'; button.textContent='Detay'; button.addEventListener('click',()=>showReleaseAppDetail(item)); cell.append(button); }
             else cell.textContent=value;
             row.append(cell);
@@ -898,8 +898,11 @@ function resolvedLatestPreview(item, filename) {
     return matches.length===1 ? matches[0].filename : 'Backend tarafından belirlenecek';
 }
 
-function archiveFileIsCurrent(file, latestFiles) {
-    return Boolean(file.checksum_algorithm && file.checksum_value && latestFiles.some(latest=>latest.checksum_algorithm===file.checksum_algorithm && latest.checksum_value===file.checksum_value));
+function archiveFileIsCurrent(version, file, latestFiles) {
+    return latestFiles.some(latest => {
+        if (latest.detection === 'metadata') return latest.version === version && latest.source_filename === file.filename;
+        return Boolean(file.checksum_algorithm && file.checksum_value && latest.checksum_algorithm === file.checksum_algorithm && latest.checksum_value === file.checksum_value);
+    });
 }
 
 function openPromoteModal(item, version, file) {
@@ -921,14 +924,14 @@ async function showReleaseAppDetail(summary) {
         const latest=item.latest_files[0];
         if (latest) {
             const card=document.createElement('div'); card.className='card mb-4'; const body=document.createElement('div'); body.className='card-body';
-            const current=latest.detection==='checksum' && latest.version ? latest.version : (latest.detection==='ambiguous'?'Birden fazla eşleşme':'Belirlenemedi');
+            const current=(latest.detection==='checksum' || latest.detection==='metadata') && latest.version ? latest.version : (latest.detection==='ambiguous'?'Birden fazla eşleşme':'Belirlenemedi');
             [['Güncel Sürüm',current],['Sabit Dosya',latest.filename],['Boyut',formatFileSize(latest.file_size)],['Son Güncelleme',formatReleaseDate(latest.last_modified)],['Sabit Link',latest.url || '—']].forEach(([label,value])=>{const line=document.createElement('p');line.className='mb-1';const strong=document.createElement('strong');strong.textContent=`${label}: `;line.append(strong,value);body.append(line);});
             if(latest.url) body.append(releaseUrlRow('Bağlantı',latest.url));
             const download=document.createElement('a');download.className='btn btn-primary btn-sm mt-3';download.textContent='İndir';download.href=downloadUrl('latest',item.visibility,item.application,latest.filename);body.append(download);card.append(body);container.append(card);
         }
         const archiveTitle=document.createElement('h4'); archiveTitle.textContent='Sürüm Arşivi'; container.append(archiveTitle);
         const wrapper=document.createElement('div');wrapper.className='table-responsive';const table=document.createElement('table');table.className='table align-middle';table.innerHTML='<thead><tr><th>Versiyon</th><th>Dosya</th><th>Boyut</th><th>Tarih</th><th>İşlem</th></tr></thead>';const tbody=document.createElement('tbody');
-        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else{const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
+        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(version.version,file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else{const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
         table.append(tbody);wrapper.append(table);container.append(wrapper);
     } catch(error) { container.replaceChildren(releaseAlert('danger',error.message)); }
 }

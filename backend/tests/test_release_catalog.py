@@ -146,6 +146,61 @@ def test_catalog_paths_files_urls_versions_and_ambiguous_detection():
     assert internal["latest_files"][0]["version"] == "3.0"
 
 
+def test_metadata_is_authoritative_and_sidecar_is_hidden():
+    archives = [
+        asset("App/1.0.0/test.txt", {"sha256": "same"}),
+        asset("App/1.0.1/test.txt", {"sha256": "same"}),
+    ]
+    latest = [
+        asset("App/App.txt", {"sha256": "same"}, repository="pub-latest"),
+        asset("App/.baylan-release/App.txt.json", {"sha256": "meta"}, repository="pub-latest"),
+    ]
+
+    def normalized(_, repository):
+        source = archives if repository == "pub" else latest if repository == "pub-latest" else []
+        return [{
+            "repository": repository, "path": item["path"],
+            "filename": item["path"].rsplit("/", 1)[-1],
+            "content_type": item["contentType"], "file_size": item["fileSize"],
+            "last_modified": item["lastModified"], "checksum_algorithm": "sha256",
+            "checksum_value": item["checksum"]["sha256"],
+        } for item in source]
+
+    metadata = {"version": "1.0.0", "source_filename": "test.txt", "latest_filename": "App.txt"}
+    with patch("release_service.search_nexus_assets", side_effect=normalized), patch(
+        "release_service._read_release_metadata", return_value=metadata
+    ):
+        catalog = build_release_catalog(settings())
+    item = next(x for x in catalog if x["visibility"] == "public")
+    assert [x["filename"] for x in item["latest_files"]] == ["App.txt"]
+    assert item["latest_files"][0]["detection"] == "metadata"
+    assert item["latest_files"][0]["version"] == "1.0.0"
+    assert item["latest_files"][0]["source_filename"] == "test.txt"
+
+
+@pytest.mark.parametrize("metadata", [
+    None,
+    {"version": "9.9.9", "source_filename": "test.txt", "latest_filename": "App.txt"},
+    {"version": "1.0.0", "source_filename": "missing.txt", "latest_filename": "App.txt"},
+    {"version": "1.0.0", "source_filename": "test.txt", "latest_filename": "wrong.txt"},
+])
+def test_missing_or_stale_metadata_falls_back_to_checksum(metadata):
+    scanned = {
+        "pub": [{"repository": "pub", "path": "App/1.0.0/test.txt", "filename": "test.txt", "content_type": None, "file_size": 0, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "same"}],
+        "pub-latest": [
+            {"repository": "pub-latest", "path": "App/App.txt", "filename": "App.txt", "content_type": None, "file_size": 0, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "same"},
+            {"repository": "pub-latest", "path": "App/.baylan-release/App.txt.json", "filename": "App.txt.json", "content_type": "application/json", "file_size": 1, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "meta"},
+        ],
+        "int": [], "int-latest": [],
+    }
+    with patch("release_service.search_nexus_assets", side_effect=lambda _, repo: scanned[repo]), patch(
+        "release_service._read_release_metadata", return_value=metadata
+    ):
+        latest = build_release_catalog(settings())[0]["latest_files"][0]
+    assert latest["detection"] == "checksum"
+    assert latest["version"] == "1.0.0"
+
+
 @pytest.fixture
 def client():
     clear_catalog_cache()

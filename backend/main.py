@@ -81,6 +81,7 @@ from release_service import (
     resolve_latest_filename,
     sanitize_release_filename,
     sanitize_release_segment,
+    upload_release_metadata,
     upload_to_nexus,
 )
 
@@ -615,16 +616,20 @@ def _catalog_summary(item):
     versions = {
         latest["version"]
         for latest in latest_files
-        if latest["detection"] == "checksum" and latest["version"] is not None
+        if latest["detection"] in {"metadata", "checksum"} and latest["version"] is not None
     }
     all_reliable = bool(latest_files) and all(
-        latest["detection"] == "checksum" for latest in latest_files
+        latest["detection"] in {"metadata", "checksum"} for latest in latest_files
     )
     latest_version = next(iter(versions)) if all_reliable and len(versions) == 1 else None
     if not latest_files:
         detection = "unknown"
     elif all_reliable and len(versions) == 1:
-        detection = "checksum"
+        detection = (
+            "metadata"
+            if any(latest["detection"] == "metadata" for latest in latest_files)
+            else "checksum"
+        )
     elif any(latest["detection"] == "ambiguous" for latest in latest_files):
         detection = "ambiguous"
     else:
@@ -828,6 +833,43 @@ def release_publish():
             status_code,
         )
 
+    try:
+        upload_release_metadata(
+            settings=settings,
+            repository=latest_repo,
+            application=application,
+            version=version,
+            source_filename=original_filename,
+            latest_filename=latest_filename,
+            username=username,
+            password=password,
+        )
+        clear_catalog_cache()
+    except NexusUploadError as exc:
+        log_activity(
+            username,
+            f"{application} {version} sürüm dosyasını yayınladı ancak latest kimlik bilgisi güncellenemedi",
+            category="release_publish_partial",
+            filename=original_filename,
+            actor=username,
+        )
+        return (
+            jsonify(
+                success=False,
+                partial=True,
+                archive_uploaded=True,
+                latest_uploaded=True,
+                metadata_uploaded=False,
+                application=application,
+                version=version,
+                visibility=visibility,
+                archive_url=archive_url,
+                latest_url=latest_url,
+                error="Latest dosya güncellendi ancak sürüm metadata bilgisi güncellenemedi.",
+            ),
+            exc.status_code,
+        )
+
     log_activity(
         username,
         f"{application} {version} sürümünü {visibility.upper()} olarak yayınladı",
@@ -935,13 +977,20 @@ def release_promote_latest():
         (x for x in item.get("latest_files", []) if x.get("filename") == latest_filename),
         None,
     )
-    if (
+    already_current = bool(
         latest_asset
-        and asset.get("checksum_algorithm")
+        and latest_asset.get("detection") == "metadata"
+        and latest_asset.get("version") == version
+        and latest_asset.get("source_filename") == filename
+    )
+    if latest_asset and latest_asset.get("detection") != "metadata" and (
+        asset.get("checksum_algorithm")
         and asset.get("checksum_value")
         and asset.get("checksum_algorithm") == latest_asset.get("checksum_algorithm")
         and asset.get("checksum_value") == latest_asset.get("checksum_value")
     ):
+        already_current = True
+    if already_current:
         return jsonify(success=False, error="Bu sürüm zaten güncel sürüm."), 409
 
     try:
@@ -959,7 +1008,30 @@ def release_promote_latest():
     except NexusUploadError as exc:
         return jsonify(success=False, error=exc.message), exc.status_code
 
-    clear_catalog_cache()
+    try:
+        upload_release_metadata(
+            settings=settings,
+            repository=latest_repo,
+            application=application,
+            version=version,
+            source_filename=filename,
+            latest_filename=latest_filename,
+            username=username,
+            password=password,
+        )
+        clear_catalog_cache()
+    except NexusUploadError as exc:
+        return (
+            jsonify(
+                success=False,
+                partial=True,
+                latest_uploaded=True,
+                metadata_uploaded=False,
+                error="Latest dosya güncellendi ancak sürüm metadata bilgisi güncellenemedi.",
+            ),
+            exc.status_code,
+        )
+
     log_activity(
         username,
         f"{username} {application} uygulamasında {visibility.upper()} {version} sürümünü latest yaptı",
