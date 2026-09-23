@@ -2,7 +2,7 @@ import io
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -16,6 +16,7 @@ from release_service import (  # noqa: E402
     NexusSettings,
     NexusUploadError,
     asset_exists_on_nexus,
+    promote_nexus_asset,
     resolve_latest_filename,
     upload_to_nexus,
 )
@@ -56,6 +57,99 @@ def latest_form(**overrides):
     values = publish_form(**overrides)
     values.pop("version")
     return values
+
+
+def promote_catalog(visibility="public"):
+    return [{
+        "application": "Waterworks", "visibility": visibility,
+        "latest_files": [{"filename": "setup.exe", "checksum_algorithm": "sha256", "checksum_value": "new"}],
+        "versions": [{"version": "2.5.0", "files": [{
+            "filename": "Waterworks-2.5.0.exe", "content_type": "application/x-msdownload",
+            "file_size": 123, "checksum_algorithm": "sha256", "checksum_value": "old",
+        }]}],
+    }]
+
+
+def promote_form(**overrides):
+    values = {"application": "Waterworks", "visibility": "public", "version": "2.5.0", "filename": "Waterworks-2.5.0.exe", "nexus_password": "never-store-this"}
+    values.update(overrides)
+    return values
+
+
+def test_promote_requires_session(client):
+    assert client.post("/release/promote-latest", data=promote_form()).status_code == 401
+
+
+def test_promote_requires_release_uploader(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=False):
+        assert client.post("/release/promote-latest", data=promote_form()).status_code == 403
+
+
+@pytest.mark.parametrize("field,value", [("visibility", "private"), ("application", "../x"), ("version", "../1"), ("filename", "../x.exe")])
+def test_promote_validates_all_path_inputs(client, field, value):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "promote_nexus_asset") as promote:
+        response = client.post("/release/promote-latest", data=promote_form(**{field: value}))
+    assert response.status_code == 400
+    promote.assert_not_called()
+
+
+def test_promote_resolves_target_and_credentials_server_side(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "get_release_catalog", return_value=promote_catalog()), patch.object(main, "promote_nexus_asset", return_value="https://repo/latest/Waterworks/setup.exe") as promote, patch.object(main, "clear_catalog_cache") as clear, patch.object(main, "log_activity") as audit:
+        response = client.post("/release/promote-latest", data=promote_form(latest_filename="attacker.exe", target="evil"))
+    assert response.status_code == 200
+    assert promote.call_args.kwargs["archive_repository"] == "apps-public"
+    assert promote.call_args.kwargs["latest_repository"] == "apps-public-latest"
+    assert promote.call_args.kwargs["latest_path"] == "Waterworks/setup.exe"
+    assert promote.call_args.kwargs["username"] == "publisher"
+    assert promote.call_args.kwargs["password"] == "never-store-this"
+    clear.assert_called_once()
+    assert audit.call_args.kwargs["category"] == "release_promote_latest"
+    assert "never-store-this" not in str(audit.call_args)
+
+
+def test_promote_current_checksum_does_no_network_work(client):
+    login(client)
+    catalog = promote_catalog()
+    catalog[0]["versions"][0]["files"][0]["checksum_value"] = "new"
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "get_release_catalog", return_value=catalog), patch.object(main, "promote_nexus_asset") as promote:
+        response = client.post("/release/promote-latest", data=promote_form())
+    assert response.status_code == 409
+    assert response.get_json()["error"] == "Bu sürüm zaten güncel sürüm."
+    promote.assert_not_called()
+
+
+@pytest.mark.parametrize("change,message", [
+    ({"application": "Missing"}, "Uygulama bulunamadı."),
+    ({"version": "9.9"}, "Arşiv sürümü bulunamadı."),
+    ({"filename": "missing.exe"}, "Arşiv dosyası bulunamadı."),
+])
+def test_promote_requires_exact_catalog_asset(client, change, message):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "get_release_catalog", return_value=promote_catalog()), patch.object(main, "promote_nexus_asset") as promote:
+        response = client.post("/release/promote-latest", data=promote_form(**change))
+    assert response.status_code == 404
+    assert response.get_json()["error"] == message
+    promote.assert_not_called()
+
+
+def test_promote_helper_streams_and_always_closes(nexus_settings):
+    source = type("Source", (), {})()
+    source.status_code = 200
+    source.raw = type("Raw", (), {"decode_content": True})()
+    source.close = Mock()
+    target = type("Target", (), {"status_code": 201})()
+    with patch("release_service.requests.get", return_value=source) as get, patch("release_service.requests.put", return_value=target) as put:
+        url = promote_nexus_asset(settings=nexus_settings, archive_repository="archive", archive_path="App/1/a.exe", latest_repository="latest", latest_path="App/setup.exe", username="publisher", password="secret", file_size=123)
+    assert url == "https://repo.example/repository/latest/App/setup.exe"
+    assert get.call_args.kwargs["stream"] is True
+    assert get.call_args.kwargs["auth"] == ("", "")
+    assert put.call_args.kwargs["data"] is source.raw
+    assert put.call_args.kwargs["auth"] == ("publisher", "secret")
+    assert put.call_args.kwargs["headers"]["Content-Length"] == "123"
+    source.close.assert_called_once()
 
 
 def test_publish_requires_session(client):
