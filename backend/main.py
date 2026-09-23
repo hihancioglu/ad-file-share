@@ -10,7 +10,7 @@ import time
 import zipfile
 import ipaddress
 import html
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 # Ensure previewed file types have proper MIME types
 mimetypes.add_type("image/png", ".png")
@@ -73,8 +73,11 @@ from release_service import (
     NexusUploadError,
     ReleaseValidationError,
     asset_exists_on_nexus,
+    build_nexus_url,
+    clear_catalog_cache,
     get_repository_mapping,
     get_release_catalog,
+    resolve_latest_filename,
     sanitize_release_filename,
     sanitize_release_segment,
     upload_to_nexus,
@@ -644,7 +647,9 @@ def release_apps():
         catalog = get_release_catalog(NexusSettings.from_environment())
     except NexusCatalogError as exc:
         return jsonify(error=exc.message), exc.status_code
-    return jsonify(applications=[_catalog_summary(item) for item in catalog])
+    response = jsonify(applications=[_catalog_summary(item) for item in catalog])
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/release/apps/<visibility>/<application>", methods=["GET"])
@@ -668,7 +673,9 @@ def release_app_detail(visibility, application):
     )
     if item is None:
         return jsonify(error="Uygulama bulunamadı."), 404
-    return jsonify(item)
+    response = jsonify(item)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _release_writer():
@@ -689,9 +696,6 @@ def _release_form(include_version: bool):
     if include_version:
         version = sanitize_release_segment(request.form.get("version"), "version")
     visibility = (request.form.get("visibility") or "").strip().lower()
-    latest_filename = sanitize_release_filename(
-        request.form.get("latest_filename"), "latest_filename"
-    )
     upload = request.files.get("file")
     if upload is None or not upload.filename:
         raise ReleaseValidationError("Yüklenecek dosya bulunamadı.")
@@ -701,6 +705,19 @@ def _release_form(include_version: bool):
         raise ReleaseValidationError("Nexus parolası gereklidir.")
     settings = NexusSettings.from_environment()
     archive_repo, latest_repo = get_repository_mapping(visibility, settings)
+    catalog = get_release_catalog(settings)
+    catalog_item = next(
+        (
+            item
+            for item in catalog
+            if item["application"] == application
+            and item["visibility"] == visibility
+        ),
+        None,
+    )
+    latest_filename = resolve_latest_filename(
+        application, original_filename, catalog_item
+    )
     return (
         application,
         version,
@@ -733,7 +750,9 @@ def release_publish():
             archive_repo,
             latest_repo,
         ) = _release_form(include_version=True)
-    except ReleaseValidationError as exc:
+    except (ReleaseValidationError, NexusCatalogError) as exc:
+        if isinstance(exc, NexusCatalogError):
+            return jsonify(success=False, error=exc.message), exc.status_code
         return jsonify(success=False, error=str(exc)), 400
 
     archive_path = f"{application}/{version}/{original_filename}"
@@ -765,6 +784,7 @@ def release_publish():
             password=password,
             content_type=upload.mimetype,
         )
+        clear_catalog_cache()
     except NexusUploadError as exc:
         return jsonify(success=False, partial=False, error=exc.message), exc.status_code
 
@@ -779,6 +799,7 @@ def release_publish():
             password=password,
             content_type=upload.mimetype,
         )
+        clear_catalog_cache()
     except (NexusUploadError, OSError) as exc:
         if isinstance(exc, NexusUploadError):
             message, status_code = exc.message, exc.status_code
@@ -821,6 +842,7 @@ def release_publish():
         visibility=visibility,
         archive_url=archive_url,
         latest_url=latest_url,
+        latest_filename=latest_filename,
     )
 
 
@@ -851,11 +873,14 @@ def release_publish_latest():
             password=password,
             content_type=upload.mimetype,
         )
-    except ReleaseValidationError as exc:
+    except (ReleaseValidationError, NexusCatalogError) as exc:
+        if isinstance(exc, NexusCatalogError):
+            return jsonify(success=False, error=exc.message), exc.status_code
         return jsonify(success=False, error=str(exc)), 400
     except NexusUploadError as exc:
         return jsonify(success=False, error=exc.message), exc.status_code
 
+    clear_catalog_cache()
     log_activity(
         username,
         f"{application} uygulamasının {visibility.upper()} latest dosyasını güncelledi",
@@ -863,7 +888,86 @@ def release_publish_latest():
         filename=original_filename,
         actor=username,
     )
-    return jsonify(success=True, latest_url=latest_url)
+    return jsonify(success=True, latest_url=latest_url, latest_filename=latest_filename)
+
+
+def _release_download(visibility, application, filename, version=None):
+    auth_error = _catalog_reader()
+    if auth_error:
+        return auth_error
+    try:
+        application = sanitize_release_segment(application, "application")
+        filename = sanitize_release_filename(filename, "dosya adı")
+        if version is not None:
+            version = sanitize_release_segment(version, "version")
+        settings = NexusSettings.from_environment()
+        archive_repo, latest_repo = get_repository_mapping(visibility, settings)
+        catalog = get_release_catalog(settings)
+    except ReleaseValidationError as exc:
+        return jsonify(error=str(exc)), 400
+    except NexusCatalogError as exc:
+        return jsonify(error=exc.message), exc.status_code
+
+    item = next(
+        (x for x in catalog if x["visibility"] == visibility and x["application"] == application),
+        None,
+    )
+    asset = None
+    if item and version is None:
+        asset = next((x for x in item["latest_files"] if x["filename"] == filename), None)
+        repository, asset_path = latest_repo, f"{application}/{filename}"
+    elif item:
+        release = next((x for x in item["versions"] if x["version"] == version), None)
+        asset = next((x for x in release["files"] if x["filename"] == filename), None) if release else None
+        repository, asset_path = archive_repo, f"{application}/{version}/{filename}"
+    if asset is None:
+        return jsonify(error="Dosya katalogda bulunamadı."), 404
+
+    try:
+        upstream = requests.get(
+            build_nexus_url(settings.upload_base_url, repository, asset_path),
+            auth=(settings.catalog_username, settings.catalog_password),
+            verify=settings.verify,
+            timeout=settings.timeout,
+            stream=True,
+        )
+    except requests.Timeout:
+        return jsonify(error="Nexus indirme bağlantısı zaman aşımına uğradı."), 504
+    except requests.RequestException:
+        return jsonify(error="Nexus indirme sunucusuna ulaşılamıyor."), 502
+    if not 200 <= upstream.status_code < 300:
+        upstream.close()
+        if upstream.status_code == 404:
+            return jsonify(error="Dosya Nexus üzerinde bulunamadı."), 404
+        if upstream.status_code in {401, 403}:
+            return jsonify(error="Nexus katalog hesabının indirme yetkisi yok."), 502
+        return jsonify(error="Nexus indirme işlemi başarısız oldu."), 502
+
+    def generate():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    content_type = asset.get("content_type") or "application/octet-stream"
+    response = Response(generate(), content_type=content_type)
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename={filename}; filename*=UTF-8''{quote(filename)}"
+    )
+    if asset.get("file_size") is not None:
+        response.headers["Content-Length"] = str(asset["file_size"])
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/release/download/archive/<visibility>/<application>/<version>/<filename>")
+def release_download_archive(visibility, application, version, filename):
+    return _release_download(visibility, application, filename, version)
+
+
+@app.route("/release/download/latest/<visibility>/<application>/<filename>")
+def release_download_latest(visibility, application, filename):
+    return _release_download(visibility, application, filename)
 
 
 def require_manager_auth(link):

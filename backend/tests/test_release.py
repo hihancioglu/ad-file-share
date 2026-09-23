@@ -16,6 +16,7 @@ from release_service import (  # noqa: E402
     NexusSettings,
     NexusUploadError,
     asset_exists_on_nexus,
+    resolve_latest_filename,
     upload_to_nexus,
 )
 
@@ -23,7 +24,14 @@ from release_service import (  # noqa: E402
 @pytest.fixture
 def client():
     main.app.config.update(TESTING=True)
-    return main.app.test_client()
+    item = {
+        "application": "Waterworks",
+        "visibility": "public",
+        "latest_files": [{"filename": "setup.exe"}],
+        "versions": [],
+    }
+    with patch.object(main, "get_release_catalog", return_value=[item]):
+        yield main.app.test_client()
 
 
 def login(client, username="publisher"):
@@ -68,7 +76,6 @@ def test_publish_requires_release_uploader(client):
         {"visibility": "private"},
         {"application": "../Waterworks"},
         {"version": "../../2.6.1"},
-        {"latest_filename": "../setup.exe"},
     ],
 )
 def test_publish_rejects_invalid_paths_and_visibility(client, overrides):
@@ -101,6 +108,7 @@ def test_publish_uploads_archive_then_latest(client):
         "visibility": "public",
         "archive_url": "https://repo/archive",
         "latest_url": "https://repo/latest",
+        "latest_filename": "setup.exe",
     }
     assert [call.kwargs["repository"] for call in upload.call_args_list] == [
         "apps-public",
@@ -215,6 +223,61 @@ def test_latest_publish_does_not_check_asset_existence(client):
         response = client.post("/release/publish-latest", data=latest_form())
     assert response.status_code == 200
     exists.assert_not_called()
+
+
+def test_publish_ignores_client_latest_filename(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "upload_to_nexus", side_effect=["archive", "latest"]) as upload, patch.object(
+        main, "log_activity"
+    ):
+        response = client.post(
+            "/release/publish",
+            data=publish_form(latest_filename="attacker.exe"),
+        )
+    assert response.status_code == 200
+    assert upload.call_args_list[1].kwargs["asset_path"] == "Waterworks/setup.exe"
+    assert response.get_json()["latest_filename"] == "setup.exe"
+
+
+def test_resolve_latest_filename_rules():
+    assert resolve_latest_filename("App", "new.zip", {"latest_files": [{"filename": "stable.exe"}]}) == "stable.exe"
+    assert resolve_latest_filename("Waterworks", "WaterworksSetup-2.7.0.exe", {"latest_files": []}) == "Waterworks.exe"
+    assert resolve_latest_filename("App", "new.exe", {"latest_files": [{"filename": "setup.exe"}, {"filename": "portable.zip"}]}) == "setup.exe"
+    with pytest.raises(ValueError, match="otomatik belirlenemedi"):
+        resolve_latest_filename("App", "README", {"latest_files": []})
+    with pytest.raises(ValueError, match="Bu uygulama için"):
+        resolve_latest_filename("App", "new.exe", {"latest_files": [{"filename": "a.exe"}, {"filename": "b.exe"}]})
+
+
+def test_catalog_cache_cleared_after_success_and_partial(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "clear_catalog_cache") as clear, patch.object(
+        main, "upload_to_nexus", side_effect=["archive", "latest"]
+    ), patch.object(main, "log_activity"):
+        assert client.post("/release/publish", data=publish_form()).status_code == 200
+    assert clear.call_count == 2
+
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "clear_catalog_cache") as clear, patch.object(
+        main, "upload_to_nexus", side_effect=["archive", NexusUploadError("failed")]
+    ), patch.object(main, "log_activity"):
+        response = client.post("/release/publish", data=publish_form())
+    assert response.get_json()["partial"] is True
+    clear.assert_called_once()
+
+
+def test_catalog_cache_cleared_after_latest_retry(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "upload_to_nexus", return_value="latest"
+    ), patch.object(main, "clear_catalog_cache") as clear, patch.object(main, "log_activity"):
+        assert client.post("/release/publish-latest", data=latest_form()).status_code == 200
+    clear.assert_called_once()
 
 
 @pytest.fixture

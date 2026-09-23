@@ -174,6 +174,92 @@ def test_catalog_endpoints_authorization_success_and_not_found(client):
         detail = client.get("/release/apps/public/App")
         missing = client.get("/release/apps/public/Missing")
     assert listing.status_code == 200
+    assert listing.headers["Cache-Control"] == "no-store"
     assert listing.get_json()["applications"][0]["latest_version"] == "1.0"
     assert detail.status_code == 200 and detail.get_json() == item
+    assert detail.headers["Cache-Control"] == "no-store"
     assert missing.status_code == 404
+
+
+def download_item():
+    metadata = {
+        "filename": "setup.exe",
+        "content_type": "application/test",
+        "file_size": 7,
+        "last_modified": "2026-09-23T10:35:02+00:00",
+    }
+    return {
+        "application": "App",
+        "visibility": "internal",
+        "latest_files": [dict(metadata, detection="checksum", version="1.0", url="https://public/latest")],
+        "versions": [{"version": "1.0", "files": [metadata]}],
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "repository", "asset_path"),
+    [
+        ("/release/download/archive/internal/App/1.0/setup.exe", "apps-internal", "App/1.0/setup.exe"),
+        ("/release/download/latest/internal/App/setup.exe", "apps-internal-latest", "App/setup.exe"),
+    ],
+)
+def test_archive_and_latest_download_stream_from_catalog(client, path, repository, asset_path):
+    login(client)
+    upstream = Mock(status_code=200)
+    upstream.iter_content.return_value = iter([b"abc", b"defg"])
+    settings_value = settings(repositories={"public": ("apps-public", "apps-public-latest"), "internal": ("apps-internal", "apps-internal-latest")})
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=[download_item()]
+    ), patch.object(main.NexusSettings, "from_environment", return_value=settings_value), patch.object(
+        main.requests, "get", return_value=upstream
+    ) as get:
+        response = client.get(path, buffered=False)
+        assert response.is_streamed
+        assert b"".join(response.response) == b"abcdefg"
+    assert response.headers["Content-Type"].startswith("application/test")
+    assert "attachment" in response.headers["Content-Disposition"]
+    get.assert_called_once()
+    assert get.call_args.kwargs["stream"] is True
+    assert get.call_args.kwargs["auth"] == ("catalog", "top-secret")
+    assert get.call_args.args[0].endswith(f"/repository/{repository}/{asset_path}")
+    upstream.iter_content.assert_called_once_with(chunk_size=64 * 1024)
+
+
+def test_public_archive_download_uses_proxy(client):
+    login(client)
+    item = download_item()
+    item["visibility"] = "public"
+    upstream = Mock(status_code=200)
+    upstream.iter_content.return_value = iter([b"content"])
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=[item]
+    ), patch.object(main.NexusSettings, "from_environment", return_value=settings()), patch.object(main.requests, "get", return_value=upstream):
+        response = client.get("/release/download/archive/public/App/1.0/setup.exe")
+    assert response.status_code == 200 and response.data == b"content"
+
+
+def test_download_authorization_validation_and_missing_asset(client):
+    path = "/release/download/latest/internal/App/setup.exe"
+    assert client.get(path).status_code == 401
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=False):
+        assert client.get(path).status_code == 403
+    with patch.object(main, "is_release_uploader", return_value=True):
+        assert client.get("/release/download/latest/private/App/setup.exe").status_code == 400
+        assert client.get("/release/download/latest/internal/App/bad..exe").status_code == 400
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=[download_item()]
+    ), patch.object(main.requests, "get") as get:
+        assert client.get("/release/download/latest/internal/App/missing.exe").status_code == 404
+    get.assert_not_called()
+
+
+def test_download_failure_does_not_leak_catalog_password(client):
+    login(client)
+    upstream = Mock(status_code=403)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=[download_item()]
+    ), patch.object(main.NexusSettings, "from_environment", return_value=settings()), patch.object(main.requests, "get", return_value=upstream):
+        response = client.get("/release/download/latest/internal/App/setup.exe")
+    assert response.status_code == 502
+    assert "top-secret" not in response.get_data(as_text=True)
