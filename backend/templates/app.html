@@ -411,6 +411,22 @@
   </div>
 </div>
 
+<div class="modal fade" id="promoteLatestModal" tabindex="-1" aria-labelledby="promoteLatestTitle" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="promoteLatestTitle">Latest Yap</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p><strong id="promote-application"></strong></p>
+      <p><span id="promote-version"></span> sürümünü güncel sürüm yapmak üzeresiniz.</p>
+      <dl class="row mb-2"><dt class="col-4">Kaynak:</dt><dd class="col-8" id="promote-source"></dd><dt class="col-4">Sabit dosya:</dt><dd class="col-8" id="promote-target"></dd><dt class="col-4">Erişim:</dt><dd class="col-8" id="promote-visibility"></dd></dl>
+      <div class="alert alert-warning">Bu işlem mevcut sabit indirme bağlantısındaki dosyayı değiştirecektir. Arşiv dosyaları değiştirilmeyecektir.</div>
+      <label for="promote-password" class="form-label">Nexus / AD Parolası</label>
+      <input type="password" class="form-control" id="promote-password" autocomplete="current-password" required>
+      <div id="promote-error" class="text-danger mt-2" role="alert"></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button><button type="button" class="btn btn-warning" id="promote-submit"><span class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span><span class="button-label">Latest Yap</span></button></div>
+  </div></div>
+</div>
+
 <div class="modal fade" id="teamModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -874,6 +890,25 @@ function downloadUrl(type, visibility, application, filename, version) {
     return '/' + parts.map(encodeURIComponent).join('/');
 }
 
+function resolvedLatestPreview(item, filename) {
+    if (item.latest_files.length === 1) return item.latest_files[0].filename;
+    const dot=filename.lastIndexOf('.'); if(dot<0)return 'Backend tarafından belirlenecek';
+    const extension=filename.slice(dot).toLocaleLowerCase('en');
+    const matches=item.latest_files.filter(x=>{const i=x.filename.lastIndexOf('.');return i>=0&&x.filename.slice(i).toLocaleLowerCase('en')===extension;});
+    return matches.length===1 ? matches[0].filename : 'Backend tarafından belirlenecek';
+}
+
+function archiveFileIsCurrent(file, latestFiles) {
+    return Boolean(file.checksum_algorithm && file.checksum_value && latestFiles.some(latest=>latest.checksum_algorithm===file.checksum_algorithm && latest.checksum_value===file.checksum_value));
+}
+
+function openPromoteModal(item, version, file) {
+    const modalElement=document.getElementById('promoteLatestModal');
+    modalElement.dataset.application=item.application;modalElement.dataset.visibility=item.visibility;modalElement.dataset.version=version;modalElement.dataset.filename=file.filename;
+    document.getElementById('promote-application').textContent=item.application;document.getElementById('promote-version').textContent=version;document.getElementById('promote-source').textContent=file.filename;document.getElementById('promote-target').textContent=resolvedLatestPreview(item,file.filename);document.getElementById('promote-visibility').textContent=item.visibility.toUpperCase();document.getElementById('promote-error').textContent='';
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+}
+
 async function showReleaseAppDetail(summary) {
     const container=document.getElementById('release-app-detail');
     container.replaceChildren(releaseAlert('secondary','Detay yükleniyor...'));
@@ -893,10 +928,21 @@ async function showReleaseAppDetail(summary) {
         }
         const archiveTitle=document.createElement('h4'); archiveTitle.textContent='Sürüm Arşivi'; container.append(archiveTitle);
         const wrapper=document.createElement('div');wrapper.className='table-responsive';const table=document.createElement('table');table.className='table align-middle';table.innerHTML='<thead><tr><th>Versiyon</th><th>Dosya</th><th>Boyut</th><th>Tarih</th><th>İşlem</th></tr></thead>';const tbody=document.createElement('tbody');
-        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);row.append(action);tbody.append(row);}));
+        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else{const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
         table.append(tbody);wrapper.append(table);container.append(wrapper);
     } catch(error) { container.replaceChildren(releaseAlert('danger',error.message)); }
 }
+
+const promoteModalElement=document.getElementById('promoteLatestModal');
+promoteModalElement.addEventListener('hidden.bs.modal',()=>{document.getElementById('promote-password').value='';document.getElementById('promote-error').textContent='';});
+document.getElementById('promote-submit').addEventListener('click',async event=>{
+    const button=event.currentTarget;if(button.disabled)return;const password=document.getElementById('promote-password');if(!password.value){document.getElementById('promote-error').textContent='Nexus parolası gereklidir.';password.focus();return;}
+    const application=promoteModalElement.dataset.application, visibility=promoteModalElement.dataset.visibility, version=promoteModalElement.dataset.version, filename=promoteModalElement.dataset.filename;
+    button.disabled=true;button.querySelector('.spinner-border').classList.remove('d-none');button.querySelector('.button-label').textContent='Latest güncelleniyor...';document.getElementById('promote-error').textContent='';
+    try{const form=new FormData();form.append('application',application);form.append('visibility',visibility);form.append('version',version);form.append('filename',filename);form.append('nexus_password',password.value);const response=await fetch('/release/promote-latest',{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok||data.success!==true)throw new Error(data.error||'Latest güncellenemedi.');bootstrap.Modal.getOrCreateInstance(promoteModalElement).hide();await loadReleaseCatalog();await showReleaseAppDetail({application,visibility});document.getElementById('release-app-detail').prepend(releaseAlert('success',`${application} ${version} sürümü güncel sürüm olarak ayarlandı.`));}
+    catch(error){document.getElementById('promote-error').textContent=error.message;}
+    finally{password.value='';button.disabled=false;button.querySelector('.spinner-border').classList.add('d-none');button.querySelector('.button-label').textContent='Latest Yap';}
+});
 
 function showPartialRelease(message) {
     const warning=releaseAlert('warning','Arşiv başarıyla yüklendi ancak sabit latest bağlantısı güncellenemedi.');

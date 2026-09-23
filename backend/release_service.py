@@ -411,3 +411,86 @@ def upload_to_nexus(
     if not 200 <= response.status_code < 300:
         raise _nexus_error(response)
     return build_nexus_url(settings.public_base_url, repository, asset_path)
+
+
+def promote_nexus_asset(
+    *,
+    settings: NexusSettings,
+    archive_repository: str,
+    archive_path: str,
+    latest_repository: str,
+    latest_path: str,
+    username: str,
+    password: str,
+    content_type: str | None = None,
+    file_size: int | None = None,
+) -> str:
+    """Copy an archive asset to latest without buffering it in this process."""
+    source_url = build_nexus_url(
+        settings.upload_base_url, archive_repository, archive_path
+    )
+    source = None
+    try:
+        try:
+            source = requests.get(
+                source_url,
+                stream=True,
+                auth=(settings.catalog_username, settings.catalog_password),
+                verify=settings.verify,
+                timeout=settings.timeout,
+            )
+        except requests.Timeout as exc:
+            raise NexusUploadError(
+                "Nexus arşiv bağlantısı zaman aşımına uğradı.", 504
+            ) from exc
+        except requests.ConnectionError as exc:
+            raise NexusUploadError("Nexus sunucusuna ulaşılamıyor.", 502) from exc
+        except requests.RequestException as exc:
+            raise NexusUploadError("Nexus arşiv dosyası okunamadı.", 502) from exc
+
+        if not 200 <= source.status_code < 300:
+            if source.status_code in {401, 403}:
+                raise NexusUploadError(
+                    "Nexus katalog hesabının arşiv dosyasını okuma yetkisi yok.",
+                    502,
+                )
+            if source.status_code == 404:
+                raise NexusUploadError(
+                    "Arşiv dosyası Nexus üzerinde bulunamadı.", 404
+                )
+            if source.status_code >= 500:
+                raise NexusUploadError("Nexus sunucusunda hata oluştu.", 502)
+            raise NexusUploadError("Nexus arşiv dosyası okunamadı.", 502)
+
+        # urllib3's raw response is a file-like streaming body.  Disabling
+        # transparent decoding also keeps an optional catalog Content-Length valid.
+        source.raw.decode_content = False
+        headers = {"Content-Type": content_type or "application/octet-stream"}
+        if file_size is not None:
+            headers["Content-Length"] = str(file_size)
+        target_url = build_nexus_url(
+            settings.upload_base_url, latest_repository, latest_path
+        )
+        try:
+            target = requests.put(
+                target_url,
+                data=source.raw,
+                auth=(username, password),
+                headers=headers,
+                verify=settings.verify,
+                timeout=settings.timeout,
+            )
+        except requests.Timeout as exc:
+            raise NexusUploadError("Nexus bağlantısı zaman aşımına uğradı.", 504) from exc
+        except requests.ConnectionError as exc:
+            raise NexusUploadError("Nexus sunucusuna ulaşılamıyor.", 502) from exc
+        except requests.RequestException as exc:
+            raise NexusUploadError("Nexus yükleme işlemi başarısız oldu.", 502) from exc
+        if not 200 <= target.status_code < 300:
+            raise _nexus_error(target)
+        return build_nexus_url(
+            settings.public_base_url, latest_repository, latest_path
+        )
+    finally:
+        if source is not None:
+            source.close()

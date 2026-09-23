@@ -77,6 +77,7 @@ from release_service import (
     clear_catalog_cache,
     get_repository_mapping,
     get_release_catalog,
+    promote_nexus_asset,
     resolve_latest_filename,
     sanitize_release_filename,
     sanitize_release_segment,
@@ -889,6 +890,92 @@ def release_publish_latest():
         actor=username,
     )
     return jsonify(success=True, latest_url=latest_url, latest_filename=latest_filename)
+
+
+@app.route("/release/promote-latest", methods=["POST"])
+def release_promote_latest():
+    username, auth_error = _release_writer()
+    if auth_error:
+        return auth_error
+    try:
+        application = sanitize_release_segment(
+            request.form.get("application"), "application"
+        )
+        version = sanitize_release_segment(request.form.get("version"), "version")
+        filename = sanitize_release_filename(request.form.get("filename"), "dosya adı")
+        visibility = (request.form.get("visibility") or "").strip().lower()
+        password = request.form.get("nexus_password")
+        if not password:
+            raise ReleaseValidationError("Nexus parolası gereklidir.")
+        settings = NexusSettings.from_environment()
+        archive_repo, latest_repo = get_repository_mapping(visibility, settings)
+        catalog = get_release_catalog(settings)
+    except ReleaseValidationError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+    except NexusCatalogError as exc:
+        return jsonify(success=False, error=exc.message), exc.status_code
+
+    item = next(
+        (x for x in catalog if x.get("application") == application and x.get("visibility") == visibility),
+        None,
+    )
+    if item is None:
+        return jsonify(success=False, error="Uygulama bulunamadı."), 404
+    release = next((x for x in item.get("versions", []) if x.get("version") == version), None)
+    if release is None:
+        return jsonify(success=False, error="Arşiv sürümü bulunamadı."), 404
+    asset = next((x for x in release.get("files", []) if x.get("filename") == filename), None)
+    if asset is None:
+        return jsonify(success=False, error="Arşiv dosyası bulunamadı."), 404
+    try:
+        latest_filename = resolve_latest_filename(application, filename, item)
+    except ReleaseValidationError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+    latest_asset = next(
+        (x for x in item.get("latest_files", []) if x.get("filename") == latest_filename),
+        None,
+    )
+    if (
+        latest_asset
+        and asset.get("checksum_algorithm")
+        and asset.get("checksum_value")
+        and asset.get("checksum_algorithm") == latest_asset.get("checksum_algorithm")
+        and asset.get("checksum_value") == latest_asset.get("checksum_value")
+    ):
+        return jsonify(success=False, error="Bu sürüm zaten güncel sürüm."), 409
+
+    try:
+        latest_url = promote_nexus_asset(
+            settings=settings,
+            archive_repository=archive_repo,
+            archive_path=f"{application}/{version}/{filename}",
+            latest_repository=latest_repo,
+            latest_path=f"{application}/{latest_filename}",
+            username=username,
+            password=password,
+            content_type=asset.get("content_type"),
+            file_size=asset.get("file_size"),
+        )
+    except NexusUploadError as exc:
+        return jsonify(success=False, error=exc.message), exc.status_code
+
+    clear_catalog_cache()
+    log_activity(
+        username,
+        f"{username} {application} uygulamasında {visibility.upper()} {version} sürümünü latest yaptı",
+        category="release_promote_latest",
+        filename=f"{filename} -> {latest_filename}",
+        actor=username,
+    )
+    return jsonify(
+        success=True,
+        application=application,
+        visibility=visibility,
+        version=version,
+        source_filename=filename,
+        latest_filename=latest_filename,
+        latest_url=latest_url,
+    )
 
 
 def _release_download(visibility, application, filename, version=None):
