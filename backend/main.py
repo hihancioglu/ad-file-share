@@ -49,6 +49,7 @@ from flask import (
 )
 from flask_cors import CORS
 import ldap3
+from ldap3.utils.conv import escape_filter_chars
 from dotenv import load_dotenv
 from database import SessionLocal, add_missing_columns
 from models import (
@@ -259,6 +260,7 @@ LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "")
 LDAP_SEARCH_FILTER = os.getenv(
     "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
 )
+RELEASE_UPLOADER_GROUP = os.getenv("RELEASE_UPLOADER_GROUP", "release-uploader")
 # Only expose these OUs in the user selection tree
 ALLOWED_OUS = {"BAYLAN3", "BAYLAN4", "BAYLAN5"}
 
@@ -273,6 +275,56 @@ LOGIN_WHITELIST = {
 
 def is_admin(username: str) -> bool:
     return username.lower() in ADMIN_USERS
+
+
+def is_release_uploader(username: str) -> bool:
+    """Return whether *username* belongs to the configured release group."""
+    server = ldap3.Server(LDAP_SERVER)
+    service_account = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    try:
+        conn = ldap3.Connection(
+            server,
+            user=service_account,
+            password=LDAP_PASSWORD,
+            authentication=ldap3.NTLM,
+        )
+        if not conn.bind():
+            return False
+
+        group = escape_filter_chars(RELEASE_UPLOADER_GROUP)
+        group_filter = (
+            f"(&(objectClass=group)(|(sAMAccountName={group})(cn={group})))"
+        )
+        if not conn.search(
+            LDAP_BASE_DN,
+            group_filter,
+            attributes=["distinguishedName"],
+        ) or not conn.entries:
+            return False
+
+        group_dn = escape_filter_chars(conn.entries[0].entry_dn)
+        account = escape_filter_chars(username)
+        membership_filter = (
+            "(&(objectClass=user)"
+            f"(sAMAccountName={account})"
+            f"(memberOf:1.2.840.113556.1.4.1941:={group_dn}))"
+        )
+        return bool(
+            conn.search(
+                LDAP_BASE_DN,
+                membership_filter,
+                attributes=["sAMAccountName"],
+            )
+            and conn.entries
+        )
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
 
 GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
 GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID")
@@ -522,6 +574,14 @@ def manager_name_endpoint():
     if not manager_name:
         return jsonify(manager="")
     return jsonify(manager=manager_name)
+
+
+@app.route("/release/access", methods=["GET"])
+def release_access():
+    username = session.get("username")
+    if not username:
+        return jsonify(error="Giriş yapmanız gerekiyor"), 401
+    return jsonify(allowed=is_release_uploader(username))
 
 
 def require_manager_auth(link):
