@@ -125,6 +125,9 @@ def _nexus_error(response: requests.Response) -> NexusUploadError:
             "already exists",
             "cannot be updated",
             "already been uploaded",
+            "repository does not allow updating assets",
+            "asset already exists",
+            "cannot be modified",
         )
     ):
         return NexusUploadError("Bu uygulama sürümü daha önce yayınlanmış.", 409)
@@ -137,6 +140,43 @@ def _nexus_error(response: requests.Response) -> NexusUploadError:
     if status >= 500:
         return NexusUploadError("Nexus sunucusunda hata oluştu.", 502)
     return NexusUploadError("Nexus yükleme işlemi başarısız oldu.", 502)
+
+
+def asset_exists_on_nexus(
+    *,
+    settings: NexusSettings,
+    repository: str,
+    asset_path: str,
+    username: str,
+    password: str,
+) -> bool:
+    """Check whether a raw asset exists without exposing Nexus response details."""
+    asset_url = build_nexus_url(settings.upload_base_url, repository, asset_path)
+    try:
+        response = requests.head(
+            asset_url,
+            auth=(username, password),
+            verify=settings.verify,
+            timeout=settings.timeout,
+        )
+    except requests.Timeout as exc:
+        raise NexusUploadError("Nexus bağlantısı zaman aşımına uğradı.", 504) from exc
+    except requests.ConnectionError as exc:
+        raise NexusUploadError("Nexus sunucusuna ulaşılamıyor.", 502) from exc
+    except requests.RequestException as exc:
+        raise NexusUploadError("Nexus yükleme işlemi başarısız oldu.", 502) from exc
+
+    if 200 <= response.status_code < 300:
+        return True
+    if response.status_code == 404:
+        return False
+    if response.status_code == 401:
+        raise NexusUploadError("Nexus kullanıcı adı veya parola hatalı.", 401)
+    if response.status_code == 403:
+        raise NexusUploadError("Nexus üzerinde yayınlama yetkiniz bulunmuyor.", 403)
+    if response.status_code >= 500:
+        raise NexusUploadError("Nexus sunucusunda hata oluştu.", 502)
+    raise NexusUploadError("Nexus yükleme işlemi başarısız oldu.", 502)
 
 
 def upload_to_nexus(

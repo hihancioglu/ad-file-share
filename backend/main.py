@@ -71,6 +71,7 @@ from release_service import (
     NexusSettings,
     NexusUploadError,
     ReleaseValidationError,
+    asset_exists_on_nexus,
     get_repository_mapping,
     sanitize_release_filename,
     sanitize_release_segment,
@@ -661,6 +662,23 @@ def release_publish():
     archive_path = f"{application}/{version}/{original_filename}"
     latest_path = f"{application}/{latest_filename}"
     try:
+        if asset_exists_on_nexus(
+            settings=settings,
+            repository=archive_repo,
+            asset_path=archive_path,
+            username=username,
+            password=password,
+        ):
+            return (
+                jsonify(
+                    success=False,
+                    partial=False,
+                    archive_uploaded=False,
+                    latest_uploaded=False,
+                    error="Bu uygulama sürümü daha önce yayınlanmış.",
+                ),
+                409,
+            )
         archive_url = upload_to_nexus(
             settings=settings,
             repository=archive_repo,
