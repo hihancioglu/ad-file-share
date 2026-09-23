@@ -35,6 +35,31 @@ The backend reads LDAP settings from environment variables. To customize how use
 
 Set `RELEASE_UPLOADER_GROUP` to the Active Directory group whose direct or nested members may publish releases. It defaults to `release-uploader`. Release access checks use the configured LDAP service account.
 
+### Release publishing / Nexus
+
+Release publishers upload setup files directly to Nexus raw hosted repositories using
+their logged-in AD username and a Nexus password supplied with each request. Configure
+the integration with these environment variables (shown with their defaults):
+
+```env
+NEXUS_UPLOAD_BASE_URL=
+NEXUS_PUBLIC_BASE_URL=https://repo.baylan.info.tr
+NEXUS_REPO_PUBLIC=apps-public
+NEXUS_REPO_PUBLIC_LATEST=apps-public-latest
+NEXUS_REPO_INTERNAL=apps-internal
+NEXUS_REPO_INTERNAL_LATEST=apps-internal-latest
+NEXUS_VERIFY_TLS=true
+NEXUS_CA_CERT_FILE=
+NEXUS_CONNECT_TIMEOUT=10
+NEXUS_READ_TIMEOUT=3600
+```
+
+`NEXUS_UPLOAD_BASE_URL` is the server used for authenticated PUT requests, while
+`NEXUS_PUBLIC_BASE_URL` is used to construct URLs returned to clients. Set
+`NEXUS_VERIFY_TLS=false` only for a trusted development environment. When TLS
+verification is enabled and `NEXUS_CA_CERT_FILE` is set, that CA bundle is used.
+Timeout values are in seconds.
+
 Set `MAX_UPLOAD_SIZE` to override the default 2 GB upload limit. The value can be specified in raw bytes (e.g. `2147483648`) or using `KB`, `MB`, `GB`, or `TB` suffixes (e.g. `2GB`).
 
 For public shares requiring manager approval, the backend sends an e-mail to the user's manager through the Microsoft Graph API. Configure the following variables:

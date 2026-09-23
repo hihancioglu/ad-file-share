@@ -67,6 +67,15 @@ from models import (
 from sqlalchemy import func
 from logging.handlers import SysLogHandler
 from flask import has_request_context
+from release_service import (
+    NexusSettings,
+    NexusUploadError,
+    ReleaseValidationError,
+    get_repository_mapping,
+    sanitize_release_filename,
+    sanitize_release_segment,
+    upload_to_nexus,
+)
 
 load_dotenv()
 add_missing_columns()
@@ -582,6 +591,184 @@ def release_access():
     if not username:
         return jsonify(error="Giriş yapmanız gerekiyor"), 401
     return jsonify(allowed=is_release_uploader(username))
+
+
+def _release_writer():
+    """Authorize a release write request and return its session identity."""
+    username = session.get("username")
+    if not username:
+        return None, (jsonify(error="Giriş yapmanız gerekiyor"), 401)
+    if not is_release_uploader(username):
+        return None, (jsonify(error="Yayınlama yetkiniz bulunmuyor"), 403)
+    return username, None
+
+
+def _release_form(include_version: bool):
+    application = sanitize_release_segment(
+        request.form.get("application"), "application"
+    )
+    version = None
+    if include_version:
+        version = sanitize_release_segment(request.form.get("version"), "version")
+    visibility = (request.form.get("visibility") or "").strip().lower()
+    latest_filename = sanitize_release_filename(
+        request.form.get("latest_filename"), "latest_filename"
+    )
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise ReleaseValidationError("Yüklenecek dosya bulunamadı.")
+    original_filename = sanitize_release_filename(upload.filename, "dosya adı")
+    password = request.form.get("nexus_password")
+    if not password:
+        raise ReleaseValidationError("Nexus parolası gereklidir.")
+    settings = NexusSettings.from_environment()
+    archive_repo, latest_repo = get_repository_mapping(visibility, settings)
+    return (
+        application,
+        version,
+        visibility,
+        latest_filename,
+        original_filename,
+        password,
+        upload,
+        settings,
+        archive_repo,
+        latest_repo,
+    )
+
+
+@app.route("/release/publish", methods=["POST"])
+def release_publish():
+    username, auth_error = _release_writer()
+    if auth_error:
+        return auth_error
+    try:
+        (
+            application,
+            version,
+            visibility,
+            latest_filename,
+            original_filename,
+            password,
+            upload,
+            settings,
+            archive_repo,
+            latest_repo,
+        ) = _release_form(include_version=True)
+    except ReleaseValidationError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+
+    archive_path = f"{application}/{version}/{original_filename}"
+    latest_path = f"{application}/{latest_filename}"
+    try:
+        archive_url = upload_to_nexus(
+            settings=settings,
+            repository=archive_repo,
+            asset_path=archive_path,
+            stream=upload.stream,
+            username=username,
+            password=password,
+            content_type=upload.mimetype,
+        )
+    except NexusUploadError as exc:
+        return jsonify(success=False, partial=False, error=exc.message), exc.status_code
+
+    try:
+        upload.stream.seek(0)
+        latest_url = upload_to_nexus(
+            settings=settings,
+            repository=latest_repo,
+            asset_path=latest_path,
+            stream=upload.stream,
+            username=username,
+            password=password,
+            content_type=upload.mimetype,
+        )
+    except (NexusUploadError, OSError) as exc:
+        if isinstance(exc, NexusUploadError):
+            message, status_code = exc.message, exc.status_code
+        else:
+            message, status_code = "Dosya latest yüklemesi için yeniden okunamadı.", 500
+        log_activity(
+            username,
+            f"{application} {version} sürümünü {visibility.upper()} olarak kısmen yayınladı",
+            category="release_publish_partial",
+            filename=original_filename,
+            actor=username,
+        )
+        return (
+            jsonify(
+                success=False,
+                partial=True,
+                archive_uploaded=True,
+                latest_uploaded=False,
+                application=application,
+                version=version,
+                visibility=visibility,
+                archive_url=archive_url,
+                error=message,
+            ),
+            status_code,
+        )
+
+    log_activity(
+        username,
+        f"{application} {version} sürümünü {visibility.upper()} olarak yayınladı",
+        category="release_publish",
+        filename=original_filename,
+        actor=username,
+    )
+    return jsonify(
+        success=True,
+        partial=False,
+        application=application,
+        version=version,
+        visibility=visibility,
+        archive_url=archive_url,
+        latest_url=latest_url,
+    )
+
+
+@app.route("/release/publish-latest", methods=["POST"])
+def release_publish_latest():
+    username, auth_error = _release_writer()
+    if auth_error:
+        return auth_error
+    try:
+        (
+            application,
+            _version,
+            visibility,
+            latest_filename,
+            original_filename,
+            password,
+            upload,
+            settings,
+            _archive_repo,
+            latest_repo,
+        ) = _release_form(include_version=False)
+        latest_url = upload_to_nexus(
+            settings=settings,
+            repository=latest_repo,
+            asset_path=f"{application}/{latest_filename}",
+            stream=upload.stream,
+            username=username,
+            password=password,
+            content_type=upload.mimetype,
+        )
+    except ReleaseValidationError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+    except NexusUploadError as exc:
+        return jsonify(success=False, error=exc.message), exc.status_code
+
+    log_activity(
+        username,
+        f"{application} uygulamasının {visibility.upper()} latest dosyasını güncelledi",
+        category="release_latest_update",
+        filename=original_filename,
+        actor=username,
+    )
+    return jsonify(success=True, latest_url=latest_url)
 
 
 def require_manager_auth(link):
