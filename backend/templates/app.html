@@ -91,6 +91,7 @@
                     <ul id="team-menu" class="nav flex-column ms-3"></ul>
                 </li>
                 <li class="nav-item"><a class="nav-link" href="#activities"><i class="bi bi-clock-history me-2"></i>Aktiviteler</a></li>
+                <li class="nav-item d-none" id="release-menu-item"><a class="nav-link" href="#release"><i class="bi bi-box-seam me-2"></i>Uygulama Yayınlama</a></li>
             </ul>
         </div>
     </nav>
@@ -321,6 +322,47 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </section>
+
+        <section id="release" class="d-none" style="max-width: 760px;">
+            <h2>Uygulama Yayınlama</h2>
+            <form id="release-form" class="mt-3">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="release-application" class="form-label">Uygulama Kodu</label>
+                        <input type="text" class="form-control" id="release-application" name="application" placeholder="Waterworks" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="release-version" class="form-label">Versiyon</label>
+                        <input type="text" class="form-control" id="release-version" name="version" placeholder="2.6.1" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="release-visibility" class="form-label">Erişim</label>
+                        <select class="form-select" id="release-visibility" name="visibility" required>
+                            <option value="public">Public</option>
+                            <option value="internal">Internal</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="release-file" class="form-label">Setup / Paket Dosyası</label>
+                        <input type="file" class="form-control" id="release-file" name="file" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="release-latest-filename" class="form-label">Sabit Link Dosya Adı</label>
+                        <input type="text" class="form-control" id="release-latest-filename" name="latest_filename" placeholder="setup.exe" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="release-password" class="form-label">Nexus / AD Parolası</label>
+                        <input type="password" class="form-control" id="release-password" autocomplete="current-password" required>
+                    </div>
+                </div>
+                <button type="submit" id="release-publish-btn" class="btn btn-primary mt-4">
+                    <span id="release-spinner" class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span>
+                    Yayınla
+                </button>
+                <span id="release-upload-status" class="ms-3 text-muted d-none" role="status">Nexus'a yükleniyor...</span>
+            </form>
+            <div id="release-result" class="mt-3" aria-live="polite"></div>
         </section>
     </div>
 </div>
@@ -619,6 +661,7 @@ let diskChart;
 const sections = {
     dashboard: document.getElementById('dashboard'),
     upload: document.getElementById('upload'),
+    release: document.getElementById('release'),
     files: document.getElementById('files'),
     incoming: document.getElementById('incoming'),
     outgoing: document.getElementById('outgoing'),
@@ -628,6 +671,178 @@ const sections = {
     'team-details': document.getElementById('team-details'),
     activities: document.getElementById('activities')
 };
+
+let releaseAccessAllowed = false;
+let releasePublishing = false;
+let pendingLatestRelease = null;
+
+async function loadReleaseAccess() {
+    try {
+        const response = await fetch('/release/access');
+        if (!response.ok) return false;
+        const data = await response.json();
+        releaseAccessAllowed = data.allowed === true;
+        if (releaseAccessAllowed) {
+            document.getElementById('release-menu-item').classList.remove('d-none');
+        }
+    } catch (error) {
+        releaseAccessAllowed = false;
+    }
+    return releaseAccessAllowed;
+}
+
+const releaseAccessPromise = loadReleaseAccess();
+
+function setReleaseBusy(busy) {
+    document.getElementById('release-publish-btn').disabled = busy;
+    document.getElementById('release-spinner').classList.toggle('d-none', !busy);
+    document.getElementById('release-upload-status').classList.toggle('d-none', !busy);
+}
+
+function releaseAlert(type, message) {
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.setAttribute('role', 'alert');
+    alert.textContent = message;
+    return alert;
+}
+
+function releaseUrlRow(label, url) {
+    const row = document.createElement('div');
+    row.className = 'd-flex flex-wrap align-items-center gap-2 mt-2';
+    const title = document.createElement('strong');
+    title.textContent = `${label}:`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = url;
+    link.className = 'text-break';
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-outline-secondary btn-sm';
+    copyButton.textContent = 'Kopyala';
+    copyButton.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(url);
+            copyButton.textContent = 'Kopyalandı';
+        } catch (error) {
+            copyButton.textContent = 'Kopyalanamadı';
+        }
+    });
+    row.append(title, link, copyButton);
+    return row;
+}
+
+function showReleaseError(message) {
+    const result = document.getElementById('release-result');
+    result.replaceChildren(releaseAlert('danger', message || 'Yayınlama işlemi başarısız oldu.'));
+}
+
+function showPartialRelease(message) {
+    const result = document.getElementById('release-result');
+    const warning = releaseAlert('warning', 'Arşiv başarıyla yüklendi ancak sabit latest bağlantısı güncellenemedi.');
+    if (pendingLatestRelease.archiveUrl) {
+        warning.appendChild(releaseUrlRow('Arşiv bağlantısı', pendingLatestRelease.archiveUrl));
+    }
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.id = 'release-retry-btn';
+    retryButton.className = 'btn btn-warning mt-3';
+    retryButton.textContent = "Latest'i Tekrar Dene";
+    retryButton.addEventListener('click', retryLatestPublish);
+    warning.appendChild(retryButton);
+    const contents = message ? [releaseAlert('danger', message), warning] : [warning];
+    result.replaceChildren(...contents);
+}
+
+async function retryLatestPublish() {
+    if (releasePublishing || !pendingLatestRelease) return;
+    const passwordInput = document.getElementById('release-password');
+    if (!passwordInput.value) {
+        showPartialRelease('Devam etmek için Nexus / AD parolanızı tekrar girin.');
+        passwordInput.focus();
+        return;
+    }
+
+    releasePublishing = true;
+    setReleaseBusy(true);
+    const retryButton = document.getElementById('release-retry-btn');
+    if (retryButton) retryButton.disabled = true;
+    try {
+        const formData = new FormData();
+        formData.append('application', pendingLatestRelease.application);
+        formData.append('visibility', pendingLatestRelease.visibility);
+        formData.append('latest_filename', pendingLatestRelease.latestFilename);
+        formData.append('file', pendingLatestRelease.file);
+        formData.append('nexus_password', passwordInput.value);
+        const response = await fetch('/release/publish-latest', { method: 'POST', body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success !== true) {
+            showPartialRelease(data.error || 'Sabit latest bağlantısı güncellenemedi.');
+            return;
+        }
+        const result = document.getElementById('release-result');
+        const success = releaseAlert('success', 'Sabit latest bağlantısı başarıyla güncellendi.');
+        success.appendChild(releaseUrlRow('Sabit indirme bağlantısı', data.latest_url));
+        result.replaceChildren(success);
+        pendingLatestRelease = null;
+    } catch (error) {
+        showPartialRelease('Sabit latest bağlantısı güncellenemedi.');
+    } finally {
+        passwordInput.value = '';
+        releasePublishing = false;
+        setReleaseBusy(false);
+    }
+}
+
+document.getElementById('release-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (releasePublishing) return;
+
+    const passwordInput = document.getElementById('release-password');
+    const fileInput = document.getElementById('release-file');
+    const file = fileInput.files[0];
+    if (!file || !event.currentTarget.reportValidity()) return;
+
+    releasePublishing = true;
+    pendingLatestRelease = null;
+    setReleaseBusy(true);
+    document.getElementById('release-result').replaceChildren();
+    try {
+        const application = document.getElementById('release-application').value;
+        const visibility = document.getElementById('release-visibility').value;
+        const latestFilename = document.getElementById('release-latest-filename').value;
+        const formData = new FormData();
+        formData.append('application', application);
+        formData.append('version', document.getElementById('release-version').value);
+        formData.append('visibility', visibility);
+        formData.append('latest_filename', latestFilename);
+        formData.append('nexus_password', passwordInput.value);
+        formData.append('file', file);
+
+        const response = await fetch('/release/publish', { method: 'POST', body: formData });
+        const data = await response.json().catch(() => ({}));
+        const result = document.getElementById('release-result');
+        if (data.partial === true) {
+            pendingLatestRelease = { application, visibility, latestFilename, file, archiveUrl: data.archive_url };
+            showPartialRelease();
+        } else if (response.ok && data.success === true) {
+            const success = releaseAlert('success', 'Yayın başarıyla tamamlandı.');
+            if (data.archive_url) success.appendChild(releaseUrlRow('Arşiv bağlantısı', data.archive_url));
+            if (data.latest_url) success.appendChild(releaseUrlRow('Sabit indirme bağlantısı', data.latest_url));
+            result.replaceChildren(success);
+        } else {
+            showReleaseError(data.error || 'Yayınlama işlemi başarısız oldu.');
+        }
+    } catch (error) {
+        showReleaseError('Yayınlama işlemi başarısız oldu.');
+    } finally {
+        passwordInput.value = '';
+        releasePublishing = false;
+        setReleaseBusy(false);
+    }
+});
 
 searchInput.addEventListener('input', () => {
     setCurrentPage(1);
@@ -894,6 +1109,9 @@ async function loadManagerName() {
 loadManagerName();
 
 function showSection(id) {
+    if (id === 'release' && !releaseAccessAllowed) {
+        return;
+    }
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
     const section = sections[id];
     if (section) {
@@ -2038,7 +2256,11 @@ if (initialHash.startsWith('team-')) {
     viewTeam(teamId);
 } else {
     const initialSection = initialHash || 'dashboard';
-    showSection(initialSection);
+    if (initialSection === 'release') {
+        releaseAccessPromise.then((allowed) => showSection(allowed ? 'release' : 'dashboard'));
+    } else {
+        showSection(initialSection);
+    }
 }
 
 document.getElementById('load-users').addEventListener('click', async () => {
