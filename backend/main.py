@@ -68,11 +68,13 @@ from sqlalchemy import func
 from logging.handlers import SysLogHandler
 from flask import has_request_context
 from release_service import (
+    NexusCatalogError,
     NexusSettings,
     NexusUploadError,
     ReleaseValidationError,
     asset_exists_on_nexus,
     get_repository_mapping,
+    get_release_catalog,
     sanitize_release_filename,
     sanitize_release_segment,
     upload_to_nexus,
@@ -592,6 +594,81 @@ def release_access():
     if not username:
         return jsonify(error="Giriş yapmanız gerekiyor"), 401
     return jsonify(allowed=is_release_uploader(username))
+
+
+def _catalog_reader():
+    """Apply the release-uploader authorization shared by catalog endpoints."""
+    username = session.get("username")
+    if not username:
+        return jsonify(error="Oturum açmanız gerekiyor."), 401
+    if not is_release_uploader(username):
+        return jsonify(error="Release katalog erişim yetkiniz bulunmuyor."), 403
+    return None
+
+
+def _catalog_summary(item):
+    latest_files = item["latest_files"]
+    versions = {
+        latest["version"]
+        for latest in latest_files
+        if latest["detection"] == "checksum" and latest["version"] is not None
+    }
+    all_reliable = bool(latest_files) and all(
+        latest["detection"] == "checksum" for latest in latest_files
+    )
+    latest_version = next(iter(versions)) if all_reliable and len(versions) == 1 else None
+    if not latest_files:
+        detection = "unknown"
+    elif all_reliable and len(versions) == 1:
+        detection = "checksum"
+    elif any(latest["detection"] == "ambiguous" for latest in latest_files):
+        detection = "ambiguous"
+    else:
+        detection = "unknown"
+    return {
+        "application": item["application"],
+        "visibility": item["visibility"],
+        "latest_version": latest_version,
+        "latest_detection": detection,
+        "latest_filename": latest_files[0]["filename"] if len(latest_files) == 1 else None,
+        "version_count": len(item["versions"]),
+    }
+
+
+@app.route("/release/apps", methods=["GET"])
+def release_apps():
+    auth_error = _catalog_reader()
+    if auth_error:
+        return auth_error
+    try:
+        catalog = get_release_catalog(NexusSettings.from_environment())
+    except NexusCatalogError as exc:
+        return jsonify(error=exc.message), exc.status_code
+    return jsonify(applications=[_catalog_summary(item) for item in catalog])
+
+
+@app.route("/release/apps/<visibility>/<application>", methods=["GET"])
+def release_app_detail(visibility, application):
+    auth_error = _catalog_reader()
+    if auth_error:
+        return auth_error
+    try:
+        application = sanitize_release_segment(application, "application")
+        if visibility not in {"public", "internal"}:
+            raise ReleaseValidationError("Geçersiz visibility.")
+    except ReleaseValidationError as exc:
+        return jsonify(error=str(exc)), 400
+    try:
+        catalog = get_release_catalog(NexusSettings.from_environment())
+    except NexusCatalogError as exc:
+        return jsonify(error=exc.message), exc.status_code
+    item = next(
+        (entry for entry in catalog if entry["visibility"] == visibility and entry["application"] == application),
+        None,
+    )
+    if item is None:
+        return jsonify(error="Uygulama bulunamadı."), 404
+    return jsonify(item)
 
 
 def _release_writer():

@@ -3,9 +3,12 @@
 from dataclasses import dataclass
 import os
 import re
+import threading
+import time
 from urllib.parse import quote
 
 import requests
+from packaging.version import InvalidVersion, Version
 from werkzeug.utils import secure_filename
 
 _RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -24,6 +27,15 @@ class NexusUploadError(Exception):
         self.status_code = status_code
 
 
+class NexusCatalogError(Exception):
+    """A credential-free, user-facing Nexus catalog failure."""
+
+    def __init__(self, message: str, status_code: int = 502) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
 @dataclass(frozen=True)
 class NexusSettings:
     upload_base_url: str
@@ -31,6 +43,9 @@ class NexusSettings:
     repositories: dict[str, tuple[str, str]]
     verify: bool | str
     timeout: tuple[float, float]
+    catalog_username: str = ""
+    catalog_password: str = ""
+    catalog_cache_ttl: float = 30
 
     @classmethod
     def from_environment(cls) -> "NexusSettings":
@@ -60,6 +75,9 @@ class NexusSettings:
                 float(os.getenv("NEXUS_CONNECT_TIMEOUT", "10")),
                 float(os.getenv("NEXUS_READ_TIMEOUT", "3600")),
             ),
+            catalog_username=os.getenv("NEXUS_CATALOG_USERNAME", ""),
+            catalog_password=os.getenv("NEXUS_CATALOG_PASSWORD", ""),
+            catalog_cache_ttl=float(os.getenv("NEXUS_CATALOG_CACHE_TTL", "30")),
         )
 
 
@@ -112,6 +130,155 @@ def build_nexus_url(base_url: str, repository: str, asset_path: str) -> str:
     encoded_repository = quote(repository.strip("/"), safe="")
     encoded_path = "/".join(quote(part, safe="") for part in asset_path.split("/"))
     return f"{base_url.rstrip('/')}/repository/{encoded_repository}/{encoded_path}"
+
+
+def _catalog_error(response: requests.Response) -> NexusCatalogError:
+    if response.status_code == 401:
+        return NexusCatalogError("Nexus katalog hesabı doğrulanamadı.", 401)
+    if response.status_code == 403:
+        return NexusCatalogError(
+            "Nexus katalog hesabının repository erişim yetkisi yok.", 403
+        )
+    if response.status_code >= 500:
+        return NexusCatalogError("Nexus katalog sunucusunda hata oluştu.", 502)
+    return NexusCatalogError("Nexus katalog isteği başarısız oldu.", 502)
+
+
+def search_nexus_assets(settings: NexusSettings, repository: str) -> list[dict]:
+    """Read every Nexus search page and return only the safe normalized fields."""
+    endpoint = f"{settings.upload_base_url.rstrip('/')}/service/rest/v1/search/assets"
+    token = None
+    assets = []
+    while True:
+        params = {"repository": repository}
+        if token:
+            params["continuationToken"] = token
+        try:
+            response = requests.get(
+                endpoint,
+                params=params,
+                auth=(settings.catalog_username, settings.catalog_password),
+                verify=settings.verify,
+                timeout=settings.timeout,
+            )
+        except requests.Timeout as exc:
+            raise NexusCatalogError(
+                "Nexus katalog bağlantısı zaman aşımına uğradı.", 504
+            ) from exc
+        except requests.ConnectionError as exc:
+            raise NexusCatalogError(
+                "Nexus katalog sunucusuna ulaşılamıyor.", 502
+            ) from exc
+        except requests.RequestException as exc:
+            raise NexusCatalogError("Nexus katalog isteği başarısız oldu.", 502) from exc
+        if not 200 <= response.status_code < 300:
+            raise _catalog_error(response)
+        try:
+            payload = response.json()
+        except (ValueError, TypeError) as exc:
+            raise NexusCatalogError("Nexus katalog yanıtı geçersiz.", 502) from exc
+        for item in payload.get("items", []):
+            path = str(item.get("path") or "").lstrip("/")
+            checksum = item.get("checksum") or {}
+            algorithm = next(
+                (name for name in ("sha256", "sha512", "sha1", "md5") if checksum.get(name)),
+                None,
+            )
+            assets.append(
+                {
+                    "repository": str(item.get("repository") or repository),
+                    "path": path,
+                    "filename": path.rsplit("/", 1)[-1],
+                    "content_type": item.get("contentType"),
+                    "file_size": item.get("fileSize"),
+                    "last_modified": item.get("lastModified"),
+                    "checksum_algorithm": algorithm,
+                    "checksum_value": checksum.get(algorithm) if algorithm else None,
+                }
+            )
+        token = payload.get("continuationToken")
+        if not token:
+            return assets
+
+
+def _valid_segment(value: str, label: str) -> bool:
+    try:
+        sanitize_release_segment(value, label)
+        return True
+    except ReleaseValidationError:
+        return False
+
+
+def _version_sort(versions: list[str]) -> list[str]:
+    valid, invalid = [], []
+    for value in versions:
+        try:
+            valid.append((Version(value), value))
+        except InvalidVersion:
+            invalid.append(value)
+    return [v for _, v in sorted(valid, reverse=True)] + sorted(invalid)
+
+
+def build_release_catalog(settings: NexusSettings) -> list[dict]:
+    """Scan configured repositories and construct application/visibility records."""
+    catalog = []
+    for visibility, (archive_repo, latest_repo) in settings.repositories.items():
+        grouped: dict[str, dict] = {}
+        for asset in search_nexus_assets(settings, archive_repo):
+            parts = asset["path"].split("/")
+            if len(parts) != 3 or not _valid_segment(parts[0], "application") or not _valid_segment(parts[1], "version") or not parts[2]:
+                continue
+            app, version, filename = parts
+            entry = grouped.setdefault(app, {"archive": {}, "latest": []})
+            file_data = {key: asset[key] for key in ("file_size", "last_modified", "checksum_algorithm", "checksum_value")}
+            file_data.update(filename=filename, url=build_nexus_url(settings.public_base_url, archive_repo, asset["path"]))
+            entry["archive"].setdefault(version, []).append(file_data)
+        for asset in search_nexus_assets(settings, latest_repo):
+            parts = asset["path"].split("/")
+            if len(parts) != 2 or not _valid_segment(parts[0], "application") or not parts[1]:
+                continue
+            app, filename = parts
+            entry = grouped.setdefault(app, {"archive": {}, "latest": []})
+            matches = set()
+            if asset["checksum_algorithm"] and asset["checksum_value"]:
+                for version, files in entry["archive"].items():
+                    if any(f["checksum_algorithm"] == asset["checksum_algorithm"] and f["checksum_value"] == asset["checksum_value"] for f in files):
+                        matches.add(version)
+            latest = {key: asset[key] for key in ("file_size", "last_modified", "checksum_algorithm", "checksum_value")}
+            latest.update(filename=filename, url=build_nexus_url(settings.public_base_url, latest_repo, asset["path"]))
+            if len(matches) == 1:
+                latest.update(version=next(iter(matches)), detection="checksum")
+            elif len(matches) > 1:
+                latest.update(version=None, detection="ambiguous", matching_versions=_version_sort(list(matches)))
+            else:
+                latest.update(version=None, detection="unknown")
+            entry["latest"].append(latest)
+        for application, data in grouped.items():
+            versions = [{"version": version, "files": sorted(data["archive"][version], key=lambda f: f["filename"])} for version in _version_sort(list(data["archive"]))]
+            catalog.append({"application": application, "visibility": visibility, "latest_files": sorted(data["latest"], key=lambda f: f["filename"]), "versions": versions})
+    return sorted(catalog, key=lambda item: (item["application"].lower(), item["visibility"]))
+
+
+_catalog_cache_lock = threading.Lock()
+_catalog_cache: dict[tuple, tuple[float, list[dict]]] = {}
+
+
+def clear_catalog_cache() -> None:
+    with _catalog_cache_lock:
+        _catalog_cache.clear()
+
+
+def get_release_catalog(settings: NexusSettings) -> list[dict]:
+    """Return a process-local TTL-cached catalog (credentials are never cached)."""
+    key = (settings.upload_base_url, settings.public_base_url, tuple(sorted(settings.repositories.items())), settings.verify, settings.timeout)
+    now = time.monotonic()
+    with _catalog_cache_lock:
+        cached = _catalog_cache.get(key)
+        if cached and now - cached[0] < max(0, settings.catalog_cache_ttl):
+            return cached[1]
+        value = build_release_catalog(settings)
+        _catalog_cache[key] = (now, value)
+        return value
 
 
 def _nexus_error(response: requests.Response) -> NexusUploadError:

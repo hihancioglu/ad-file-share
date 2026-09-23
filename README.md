@@ -52,6 +52,9 @@ NEXUS_VERIFY_TLS=true
 NEXUS_CA_CERT_FILE=
 NEXUS_CONNECT_TIMEOUT=10
 NEXUS_READ_TIMEOUT=3600
+NEXUS_CATALOG_USERNAME=release_catalog_svc
+NEXUS_CATALOG_PASSWORD=
+NEXUS_CATALOG_CACHE_TTL=30
 ```
 
 `NEXUS_UPLOAD_BASE_URL` is the server used for authenticated PUT requests, while
@@ -59,6 +62,11 @@ NEXUS_READ_TIMEOUT=3600
 `NEXUS_VERIFY_TLS=false` only for a trusted development environment. When TLS
 verification is enabled and `NEXUS_CA_CERT_FILE` is set, that CA bundle is used.
 Timeout values are in seconds.
+
+The release catalog uses the separate Nexus service account above; user passwords
+are never required for catalog reads. This account must be read-only. Grant
+`nx-search-read` plus `browse` and `read` for the configured raw repositories.
+Do not grant Add, Edit, or Delete privileges.
 
 Set `MAX_UPLOAD_SIZE` to override the default 2 GB upload limit. The value can be specified in raw bytes (e.g. `2147483648`) or using `KB`, `MB`, `GB`, or `TB` suffixes (e.g. `2GB`).
 
