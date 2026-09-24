@@ -1,6 +1,7 @@
 flask
 flask-cors
 ldap3
+pycryptodome
 psycopg2-binary
 sqlalchemy
 python-dotenv
