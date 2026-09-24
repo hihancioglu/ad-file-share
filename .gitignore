@@ -28,6 +28,6 @@ Thumbs.db
 # Docker
 *.pid
 
-#certs
-nginx/certs/send.baylan.local.fullchain.pem
-nginx/certs/send.baylan.local.key
+# Certificates and private keys
+nginx/certs/*
+!nginx/certs/.gitkeep

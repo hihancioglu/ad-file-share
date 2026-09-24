@@ -33,6 +33,13 @@ The application will be available at `http://localhost:8080/`.
 
 The backend reads LDAP settings from environment variables. To customize how usernames are searched, set `LDAP_SEARCH_FILTER` in the environment. The string should contain a `{query}` placeholder that will be replaced with the incoming search text. By default the application uses `(&(objectClass=user)(sAMAccountName=*{query}*))`.
 
+`DATABASE_URL` and `FLASK_SECRET_KEY` are required and must be provided through
+the environment or `backend/.env`. When using Docker Compose, also set
+`POSTGRES_PASSWORD`; do not commit any of these secret values to the repository.
+
+TLS certificates and private keys must not be committed to the repository. Supply
+them through the deployment environment when needed.
+
 Set `RELEASE_UPLOADER_GROUP` to the Active Directory group whose direct or nested members may publish releases. It defaults to `release-uploader`. Release access checks use the configured LDAP service account.
 
 ### Release publishing / Nexus
@@ -85,7 +92,7 @@ Additional configuration options and dependencies can be found in `backend/requi
 Install dependencies for local development:
 
 ```bash
-pip install -r backend/requirements.txt
+pip install -r backend/requirements-dev.txt
 ```
 
 Run the app directly with:

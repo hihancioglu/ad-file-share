@@ -24,9 +24,9 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: filesharedb
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: ${POSTGRES_DB:-filesharedb}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Europe/Istanbul
     volumes:
       - ./postgres:/var/lib/postgresql/data
