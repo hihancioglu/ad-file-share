@@ -33,7 +33,19 @@ The application will be available at `http://localhost:8080/`.
 
 The backend reads LDAP settings from environment variables. To customize how usernames are searched, set `LDAP_SEARCH_FILTER` in the environment. The string should contain a `{query}` placeholder that will be replaced with the incoming search text. By default the application uses `(&(objectClass=user)(sAMAccountName=*{query}*))`.
 
-Set `RELEASE_UPLOADER_GROUP` to the Active Directory group whose direct or nested members may publish releases. It defaults to `release-uploader`. Release access checks use the configured LDAP service account.
+Release permissions are mapped from direct or nested Active Directory group membership. Release access checks use the configured LDAP service account:
+
+```env
+RELEASE_VIEWER_GROUP=release-viewer
+RELEASE_UPLOADER_GROUP=release-uploader
+```
+
+| Group | List/detail/download | Create/publish/promote |
+| --- | --- | --- |
+| `release-viewer` | Yes | No |
+| `release-uploader` | Yes | Yes |
+
+Both values shown are the defaults. Uploaders automatically receive read access and do not need to also belong to `release-viewer`.
 
 ### Release publishing / Nexus
 

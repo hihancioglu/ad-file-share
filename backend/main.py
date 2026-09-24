@@ -278,6 +278,7 @@ LDAP_SEARCH_FILTER = os.getenv(
     "LDAP_SEARCH_FILTER", "(&(objectClass=user)(sAMAccountName=*{query}*))"
 )
 RELEASE_UPLOADER_GROUP = os.getenv("RELEASE_UPLOADER_GROUP", "release-uploader")
+RELEASE_VIEWER_GROUP = os.getenv("RELEASE_VIEWER_GROUP", "release-viewer")
 # Only expose these OUs in the user selection tree
 ALLOWED_OUS = {"BAYLAN3", "BAYLAN4", "BAYLAN5"}
 
@@ -294,11 +295,12 @@ def is_admin(username: str) -> bool:
     return username.lower() in ADMIN_USERS
 
 
-def is_release_uploader(username: str) -> bool:
-    """Return whether *username* belongs to the configured release group."""
-    server = ldap3.Server(LDAP_SERVER)
+def is_user_in_ad_group(username: str, group_name: str) -> bool:
+    """Return whether *username* is a direct or nested member of an AD group."""
     service_account = f"{LDAP_DOMAIN}\\{LDAP_USER}"
+    conn = None
     try:
+        server = ldap3.Server(LDAP_SERVER)
         conn = ldap3.Connection(
             server,
             user=service_account,
@@ -308,7 +310,7 @@ def is_release_uploader(username: str) -> bool:
         if not conn.bind():
             return False
 
-        group = escape_filter_chars(RELEASE_UPLOADER_GROUP)
+        group = escape_filter_chars(group_name)
         group_filter = (
             f"(&(objectClass=group)(|(sAMAccountName={group})(cn={group})))"
         )
@@ -341,6 +343,25 @@ def is_release_uploader(username: str) -> bool:
             conn.unbind()
         except Exception:
             pass
+
+
+def is_release_uploader(username: str) -> bool:
+    """Return whether *username* may perform release write operations."""
+    return is_user_in_ad_group(username, RELEASE_UPLOADER_GROUP)
+
+
+def is_release_viewer(username: str) -> bool:
+    """Return whether *username* belongs to the read-only release group."""
+    return is_user_in_ad_group(username, RELEASE_VIEWER_GROUP)
+
+
+def can_read_release_catalog(username: str) -> bool:
+    """Release uploaders inherit catalog read access."""
+    return is_release_uploader(username) or is_release_viewer(username)
+
+
+def can_write_release(username: str) -> bool:
+    return is_release_uploader(username)
 
 
 GRAPH_TENANT_ID = os.getenv("GRAPH_TENANT_ID")
@@ -598,15 +619,17 @@ def release_access():
     username = session.get("username")
     if not username:
         return jsonify(error="Giriş yapmanız gerekiyor"), 401
-    return jsonify(allowed=is_release_uploader(username))
+    can_write = can_write_release(username)
+    can_read = can_write or is_release_viewer(username)
+    return jsonify(allowed=can_read, can_read=can_read, can_write=can_write)
 
 
 def _catalog_reader():
-    """Apply the release-uploader authorization shared by catalog endpoints."""
+    """Apply release read authorization shared by catalog endpoints."""
     username = session.get("username")
     if not username:
         return jsonify(error="Oturum açmanız gerekiyor."), 401
-    if not is_release_uploader(username):
+    if not can_read_release_catalog(username):
         return jsonify(error="Release katalog erişim yetkiniz bulunmuyor."), 403
     return None
 
@@ -689,7 +712,7 @@ def _release_writer():
     username = session.get("username")
     if not username:
         return None, (jsonify(error="Giriş yapmanız gerekiyor"), 401)
-    if not is_release_uploader(username):
+    if not can_write_release(username):
         return None, (jsonify(error="Yayınlama yetkiniz bulunmuyor"), 403)
     return username, None
 

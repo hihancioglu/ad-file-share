@@ -94,8 +94,8 @@
                 <li class="nav-item d-none" id="release-menu-item">
                     <span class="nav-link text-body fw-semibold"><i class="bi bi-box-seam me-2"></i>Uygulama Yönetimi</span>
                     <ul class="nav flex-column ms-3">
-                        <li class="nav-item"><a class="nav-link" href="#release"><i class="bi bi-cloud-arrow-up me-2"></i>Yeni Sürüm Yayınla</a></li>
-                        <li class="nav-item"><a class="nav-link" href="#release-new-app"><i class="bi bi-plus-square me-2"></i>Yeni Uygulama Ekle</a></li>
+                        <li class="nav-item" id="release-publish-menu-item"><a class="nav-link" href="#release"><i class="bi bi-cloud-arrow-up me-2"></i>Yeni Sürüm Yayınla</a></li>
+                        <li class="nav-item" id="release-create-menu-item"><a class="nav-link" href="#release-new-app"><i class="bi bi-plus-square me-2"></i>Yeni Uygulama Ekle</a></li>
                         <li class="nav-item"><a class="nav-link" href="#release-apps"><i class="bi bi-grid me-2"></i>Uygulamalar</a></li>
                     </ul>
                 </li>
@@ -390,7 +390,7 @@
 
         <section id="release-apps" class="d-none">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                <h2 class="mb-0">Uygulamalar</h2>
+                <h2 class="mb-0">Uygulamalar <span id="release-read-only-badge" class="badge text-bg-secondary d-none align-middle">READ ONLY</span></h2>
                 <div class="d-flex flex-wrap gap-2">
                     <input id="release-app-search" class="form-control" style="min-width:220px" placeholder="Ara................" aria-label="Uygulama ara">
                     <select id="release-app-filter" class="form-select" style="width:auto" aria-label="Erişim filtresi">
@@ -734,7 +734,8 @@ const sections = {
     activities: document.getElementById('activities')
 };
 
-let releaseAccessAllowed = false;
+let releaseCanRead = false;
+let releaseCanWrite = false;
 let releasePublishing = false;
 let releaseCatalog = [];
 let releaseCatalogReady = false;
@@ -754,13 +755,18 @@ async function loadReleaseAccess() {
         const response = await fetch('/release/access', { cache: 'no-store' });
         if (!response.ok) return false;
         const data = await response.json();
-        releaseAccessAllowed = data.allowed === true;
-        document.getElementById('release-menu-item').classList.toggle('d-none', !releaseAccessAllowed);
-        if (releaseAccessAllowed) await loadReleaseCatalog();
+        releaseCanRead = data.can_read === true;
+        releaseCanWrite = data.can_write === true;
+        document.getElementById('release-menu-item').classList.toggle('d-none', !releaseCanRead);
+        document.getElementById('release-publish-menu-item').classList.toggle('d-none', !releaseCanWrite);
+        document.getElementById('release-create-menu-item').classList.toggle('d-none', !releaseCanWrite);
+        document.getElementById('release-read-only-badge').classList.toggle('d-none', !releaseCanRead || releaseCanWrite);
+        if (releaseCanRead) await loadReleaseCatalog();
     } catch (error) {
-        releaseAccessAllowed = false;
+        releaseCanRead = false;
+        releaseCanWrite = false;
     }
-    return releaseAccessAllowed;
+    return releaseCanRead;
 }
 
 const releaseAccessPromise = loadReleaseAccess();
@@ -959,7 +965,7 @@ async function showReleaseAppDetail(summary) {
         }
         const archiveTitle=document.createElement('h4'); archiveTitle.textContent='Sürüm Arşivi'; container.append(archiveTitle);
         const wrapper=document.createElement('div');wrapper.className='table-responsive';const table=document.createElement('table');table.className='table align-middle';table.innerHTML='<thead><tr><th>Versiyon</th><th>Dosya</th><th>Boyut</th><th>Tarih</th><th>İşlem</th></tr></thead>';const tbody=document.createElement('tbody');
-        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(version.version,file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else{const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
+        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(version.version,file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else if(releaseCanWrite){const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
         table.append(tbody);wrapper.append(table);container.append(wrapper);
     } catch(error) { container.replaceChildren(releaseAlert('danger',error.message)); }
 }
@@ -1304,9 +1310,8 @@ async function loadManagerName() {
 loadManagerName();
 
 function showSection(id) {
-    if ((id === 'release' || id === 'release-new-app' || id === 'release-apps') && !releaseAccessAllowed) {
-        return;
-    }
+    if ((id === 'release' || id === 'release-new-app') && !releaseCanWrite) id = releaseCanRead ? 'release-apps' : 'dashboard';
+    if (id === 'release-apps' && !releaseCanRead) id = 'dashboard';
     Object.values(sections).forEach(sec => sec.classList.add('d-none'));
     const section = sections[id];
     if (section) {
@@ -2454,7 +2459,7 @@ if (initialHash.startsWith('team-')) {
 } else {
     const initialSection = initialHash || 'dashboard';
     if (initialSection === 'release' || initialSection === 'release-new-app' || initialSection === 'release-apps') {
-        releaseAccessPromise.then((allowed) => showSection(allowed ? initialSection : 'dashboard'));
+        releaseAccessPromise.then(() => showSection(initialSection));
     } else {
         showSection(initialSection);
     }
