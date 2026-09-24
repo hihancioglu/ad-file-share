@@ -63,6 +63,91 @@ def latest_form(**overrides):
     return values
 
 
+def create_form(**overrides):
+    values = {
+        "application": "BMS",
+        "version": "1.1.10.166",
+        "visibility": "internal",
+        "latest_filename": "BMS-x64.exe",
+        "nexus_password": "never-store-this",
+        "file": (io.BytesIO(b"setup-content"), "BMS 1.1.10.166 x64.exe"),
+    }
+    values.update(overrides)
+    return values
+
+
+def test_create_application_requires_login_and_uploader(client):
+    assert client.post("/release/apps/create", data=create_form()).status_code == 401
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=False):
+        assert client.post("/release/apps/create", data=create_form()).status_code == 403
+
+
+@pytest.mark.parametrize("field,value", [
+    ("application", "Bad App"), ("version", "../1"), ("visibility", "private"),
+    ("latest_filename", "../stable.exe"), ("latest_filename", "stable"),
+])
+def test_create_application_validates_inputs(client, field, value):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "upload_to_nexus") as upload:
+        response = client.post("/release/apps/create", data=create_form(**{field: value}))
+    assert response.status_code == 400
+    upload.assert_not_called()
+
+
+def test_create_application_uploads_archive_latest_and_metadata(client):
+    login(client)
+    order = []
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "upload_to_nexus", side_effect=lambda **kw: order.append(kw["repository"]) or f"https://repo/{len(order)}") as upload, patch.object(
+        main, "upload_release_metadata", side_effect=lambda **kw: order.append("metadata") or "metadata"
+    ) as metadata, patch.object(main, "clear_catalog_cache") as clear, patch.object(main, "log_activity") as audit:
+        response = client.post("/release/apps/create", data=create_form())
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["archive_filename"] == "BMS_1.1.10.166_x64.exe"
+    assert data["latest_filename"] == "BMS-x64.exe"
+    assert order == ["apps-internal", "apps-internal-latest", "metadata"]
+    assert upload.call_args_list[0].kwargs["asset_path"] == "BMS/1.1.10.166/BMS_1.1.10.166_x64.exe"
+    assert upload.call_args_list[1].kwargs["asset_path"] == "BMS/BMS-x64.exe"
+    assert metadata.call_args.kwargs["source_filename"] == "BMS_1.1.10.166_x64.exe"
+    assert metadata.call_args.kwargs["username"] == "publisher"
+    assert metadata.call_args.kwargs["password"] == "never-store-this"
+    assert clear.call_count == 2
+    assert audit.call_args.kwargs["category"] == "release_application_create"
+    assert "never-store-this" not in str(audit.call_args)
+
+
+def test_create_application_rejects_existing_fresh_catalog_entry(client):
+    login(client)
+    existing = [{"application": "BMS", "visibility": "internal"}]
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=existing
+    ), patch.object(main, "clear_catalog_cache") as clear, patch.object(main, "upload_to_nexus") as upload:
+        response = client.post("/release/apps/create", data=create_form())
+    assert response.status_code == 409
+    clear.assert_called_once()
+    upload.assert_not_called()
+
+
+def test_create_application_reports_latest_and_metadata_partial_failures(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "asset_exists_on_nexus", return_value=False), patch.object(
+        main, "upload_to_nexus", side_effect=["archive", NexusUploadError("raw", 502)]
+    ), patch.object(main, "log_activity"):
+        latest = client.post("/release/apps/create", data=create_form())
+    assert latest.status_code == 502
+    assert latest.get_json()["error"] == "Arşiv oluşturuldu ancak sabit latest dosyası oluşturulamadı."
+
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(main, "asset_exists_on_nexus", return_value=False), patch.object(
+        main, "upload_to_nexus", side_effect=["archive", "latest"]
+    ), patch.object(main, "upload_release_metadata", side_effect=NexusUploadError("raw", 502)), patch.object(main, "log_activity"):
+        metadata = client.post("/release/apps/create", data=create_form())
+    assert metadata.status_code == 502
+    assert metadata.get_json()["error"] == "Latest dosya oluşturuldu ancak sürüm metadata bilgisi oluşturulamadı."
+
+
 def promote_catalog(visibility="public"):
     return [{
         "application": "Waterworks", "visibility": visibility,
