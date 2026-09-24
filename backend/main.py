@@ -81,6 +81,7 @@ from release_service import (
     resolve_latest_filename,
     sanitize_release_filename,
     sanitize_release_segment,
+    upload_archive_publish_metadata,
     upload_release_metadata,
     upload_to_nexus,
 )
@@ -657,6 +658,20 @@ def _catalog_summary(item):
         detection = "ambiguous"
     else:
         detection = "unknown"
+    current_file = None
+    if latest_version is not None:
+        source_names = {
+            latest.get("source_filename") for latest in latest_files
+            if latest.get("version") == latest_version and latest.get("source_filename")
+        }
+        files = next(
+            (version["files"] for version in item["versions"] if version["version"] == latest_version),
+            [],
+        )
+        current_file = next(
+            (file for file in files if not source_names or file["filename"] in source_names),
+            files[0] if len(files) == 1 else None,
+        )
     return {
         "application": item["application"],
         "visibility": item["visibility"],
@@ -664,6 +679,9 @@ def _catalog_summary(item):
         "latest_detection": detection,
         "latest_filename": latest_files[0]["filename"] if len(latest_files) == 1 else None,
         "version_count": len(item["versions"]),
+        "latest_published_by": (current_file or {}).get("published_by"),
+        "latest_published_display_name": (current_file or {}).get("published_display_name"),
+        "latest_published_at": (current_file or {}).get("published_at"),
     }
 
 
@@ -715,6 +733,17 @@ def _release_writer():
     if not can_write_release(username):
         return None, (jsonify(error="Yayınlama yetkiniz bulunmuyor"), 403)
     return username, None
+
+
+def _release_display_name():
+    """Use only identity data already established in the login session."""
+    display_name = session.get("display_name")
+    if not display_name:
+        display_name = " ".join(
+            part.strip() for part in (session.get("givenName", ""), session.get("sn", ""))
+            if isinstance(part, str) and part.strip()
+        )
+    return display_name.strip() if isinstance(display_name, str) and display_name.strip() else None
 
 
 def _release_form(include_version: bool):
@@ -834,6 +863,23 @@ def release_app_create():
         )
     except NexusUploadError as exc:
         return jsonify(success=False, partial=False, error=exc.message), exc.status_code
+
+    try:
+        upload_archive_publish_metadata(
+            settings=settings, repository=archive_repo, application=application,
+            version=version, source_filename=archive_filename, published_by=username,
+            published_display_name=_release_display_name(), username=username, password=password,
+        )
+    except (NexusUploadError, ReleaseValidationError) as exc:
+        clear_catalog_cache()
+        status = exc.status_code if isinstance(exc, NexusUploadError) else 500
+        return jsonify(
+            success=False, partial=True, archive_uploaded=True,
+            archive_metadata_uploaded=False, latest_uploaded=False,
+            application=application, visibility=visibility, version=version,
+            archive_filename=archive_filename, archive_url=archive_url,
+            error="Arşiv dosyası yüklendi ancak yayınlayan metadata bilgisi kaydedilemedi.",
+        ), status
 
     try:
         upload.stream.seek(0)
@@ -981,6 +1027,23 @@ def release_publish():
         clear_catalog_cache()
     except NexusUploadError as exc:
         return jsonify(success=False, partial=False, error=exc.message), exc.status_code
+
+    try:
+        upload_archive_publish_metadata(
+            settings=settings, repository=archive_repo, application=application,
+            version=version, source_filename=original_filename, published_by=username,
+            published_display_name=_release_display_name(), username=username, password=password,
+        )
+        clear_catalog_cache()
+    except (NexusUploadError, ReleaseValidationError) as exc:
+        status = exc.status_code if isinstance(exc, NexusUploadError) else 500
+        return jsonify(
+            success=False, partial=True, archive_uploaded=True,
+            archive_metadata_uploaded=False, latest_uploaded=False,
+            application=application, version=version, visibility=visibility,
+            archive_url=archive_url,
+            error="Arşiv dosyası yüklendi ancak yayınlayan metadata bilgisi kaydedilemedi.",
+        ), status
 
     try:
         upload.stream.seek(0)
@@ -1866,6 +1929,9 @@ def login():
             )
         session["username"] = username
         given, sn = get_user_names(username)
+        session["givenName"] = given or ""
+        session["sn"] = sn or ""
+        session["display_name"] = f"{given or ''} {sn or ''}".strip() or None
         log_activity(
             username,
             f"{username} kullanıcısı sisteme giriş yaptı",

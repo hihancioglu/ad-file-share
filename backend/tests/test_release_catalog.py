@@ -178,6 +178,42 @@ def test_metadata_is_authoritative_and_sidecar_is_hidden():
     assert item["latest_files"][0]["source_filename"] == "test.txt"
 
 
+def test_archive_publisher_sidecar_maps_to_file_and_current_summary():
+    scanned = {
+        "pub": [
+            {"repository": "pub", "path": "App/1.0/app.exe", "filename": "app.exe", "content_type": None, "file_size": 7, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "same"},
+            {"repository": "pub", "path": "App/1.0/.baylan-release/app.exe.json", "filename": "app.exe.json", "content_type": "application/json", "file_size": 1, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "meta"},
+        ],
+        "pub-latest": [{"repository": "pub-latest", "path": "App/App.exe", "filename": "App.exe", "content_type": None, "file_size": 7, "last_modified": None, "checksum_algorithm": "sha256", "checksum_value": "same"}],
+        "int": [], "int-latest": [],
+    }
+    publisher = {"version": "1.0", "source_filename": "app.exe", "published_by": "i.hancioglu", "published_display_name": "Halil Hancıoğlu", "published_at": "2026-09-24T09:39:46Z"}
+    with patch("release_service.search_nexus_assets", side_effect=lambda _, repo: scanned[repo]), patch(
+        "release_service._read_release_metadata", return_value=publisher
+    ):
+        item = build_release_catalog(settings())[0]
+    assert len(item["versions"][0]["files"]) == 1
+    archive_file = item["versions"][0]["files"][0]
+    assert archive_file["published_by"] == "i.hancioglu"
+    assert item["latest_files"][0]["published_display_name"] == "Halil Hancıoğlu"
+
+
+def test_invalid_archive_publisher_metadata_is_ignored():
+    scanned = {
+        "pub": [
+            {"repository": "pub", "path": "App/1.0/app.exe", "filename": "app.exe", "content_type": None, "file_size": 7, "last_modified": None, "checksum_algorithm": None, "checksum_value": None},
+            {"repository": "pub", "path": "App/1.0/.baylan-release/app.exe.json", "filename": "app.exe.json", "content_type": "application/json", "file_size": 1, "last_modified": None, "checksum_algorithm": None, "checksum_value": None},
+        ], "pub-latest": [], "int": [], "int-latest": [],
+    }
+    with patch("release_service.search_nexus_assets", side_effect=lambda _, repo: scanned[repo]), patch(
+        "release_service._read_release_metadata", return_value={"version": "wrong", "source_filename": "other.exe", "published_by": "attacker"}
+    ):
+        file = build_release_catalog(settings())[0]["versions"][0]["files"][0]
+    assert file["published_by"] is None
+    assert file["published_display_name"] is None
+    assert file["published_at"] is None
+
+
 @pytest.mark.parametrize("metadata", [
     None,
     {"version": "9.9.9", "source_filename": "test.txt", "latest_filename": "App.txt"},
@@ -231,6 +267,7 @@ def test_catalog_endpoints_authorization_success_and_not_found(client):
     assert listing.status_code == 200
     assert listing.headers["Cache-Control"] == "no-store"
     assert listing.get_json()["applications"][0]["latest_version"] == "1.0"
+    assert listing.get_json()["applications"][0]["latest_published_by"] is None
     assert detail.status_code == 200 and detail.get_json() == item
     assert detail.headers["Cache-Control"] == "no-store"
     assert missing.status_code == 404

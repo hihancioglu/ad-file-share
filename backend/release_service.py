@@ -1,6 +1,7 @@
 """Validation, repository selection, and Nexus uploads for release publishing."""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import io
 import json
 import os
@@ -251,6 +252,16 @@ def release_metadata_path(application: str, latest_filename: str) -> str:
     return f"{application}/{_METADATA_DIRECTORY}/{latest_filename}.json"
 
 
+def archive_publish_metadata_path(
+    application: str, version: str, source_filename: str
+) -> str:
+    """Return the sidecar path associated with one immutable archive file."""
+    return (
+        f"{application}/{version}/{_METADATA_DIRECTORY}/"
+        f"{source_filename}.json"
+    )
+
+
 def _read_release_metadata(
     settings: NexusSettings, repository: str, asset_path: str
 ) -> dict | None:
@@ -307,12 +318,55 @@ def upload_release_metadata(
     )
 
 
+def upload_archive_publish_metadata(
+    *, settings: NexusSettings, repository: str, application: str,
+    version: str, source_filename: str, published_by: str,
+    published_display_name: str | None, username: str, password: str,
+    published_at: str | None = None,
+) -> str:
+    """Store a secret-free publisher sidecar beside an archive asset."""
+    application = sanitize_release_segment(application, "application")
+    version = sanitize_release_segment(version, "version")
+    source_filename = sanitize_release_filename(source_filename, "kaynak dosya adı")
+    published_by = (published_by or "").strip()
+    if not published_by:
+        raise ReleaseValidationError("Yayınlayan kullanıcı adı bulunamadı.")
+    payload = json.dumps(
+        {
+            "version": version,
+            "source_filename": source_filename,
+            "published_by": published_by,
+            "published_display_name": published_display_name or None,
+            "published_at": published_at
+            or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return upload_to_nexus(
+        settings=settings,
+        repository=repository,
+        asset_path=archive_publish_metadata_path(application, version, source_filename),
+        stream=io.BytesIO(payload),
+        username=username,
+        password=password,
+        content_type="application/json",
+    )
+
+
 def build_release_catalog(settings: NexusSettings) -> list[dict]:
     """Scan configured repositories and construct application/visibility records."""
     catalog = []
     for visibility, (archive_repo, latest_repo) in settings.repositories.items():
         grouped: dict[str, dict] = {}
-        for asset in search_nexus_assets(settings, archive_repo):
+        archive_assets = search_nexus_assets(settings, archive_repo)
+        archive_metadata_assets = {
+            asset["path"]: asset
+            for asset in archive_assets
+            if len(asset["path"].split("/")) == 4
+            and asset["path"].split("/")[2] == _METADATA_DIRECTORY
+        }
+        for asset in archive_assets:
             parts = asset["path"].split("/")
             if len(parts) != 3 or not _valid_segment(parts[0], "application") or not _valid_segment(parts[1], "version") or not parts[2]:
                 continue
@@ -320,6 +374,31 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
             entry = grouped.setdefault(app, {"archive": {}, "latest": []})
             file_data = {key: asset[key] for key in ("content_type", "file_size", "last_modified", "checksum_algorithm", "checksum_value")}
             file_data.update(filename=filename, url=build_nexus_url(settings.public_base_url, archive_repo, asset["path"]))
+            file_data.update(published_by=None, published_display_name=None, published_at=None)
+            metadata_path = archive_publish_metadata_path(app, version, filename)
+            if metadata_path in archive_metadata_assets:
+                candidate = _read_release_metadata(settings, archive_repo, metadata_path)
+                try:
+                    if (
+                        candidate is not None
+                        and sanitize_release_segment(candidate.get("version"), "version") == version
+                        and sanitize_release_filename(candidate.get("source_filename"), "kaynak dosya adı") == filename
+                    ):
+                        publisher = candidate.get("published_by")
+                        display_name = candidate.get("published_display_name")
+                        published_at = candidate.get("published_at")
+                        if isinstance(publisher, str) and publisher.strip():
+                            file_data["published_by"] = publisher.strip()
+                            file_data["published_display_name"] = (
+                                display_name.strip()
+                                if isinstance(display_name, str) and display_name.strip()
+                                else None
+                            )
+                            file_data["published_at"] = (
+                                published_at if isinstance(published_at, str) else None
+                            )
+                except (ReleaseValidationError, AttributeError):
+                    pass
             entry["archive"].setdefault(version, []).append(file_data)
         latest_assets = search_nexus_assets(settings, latest_repo)
         metadata_assets = {
@@ -365,6 +444,17 @@ def build_release_catalog(settings: NexusSettings) -> list[dict]:
                 latest.update(version=None, detection="ambiguous", matching_versions=_version_sort(list(matches)))
             else:
                 latest.update(version=None, detection="unknown")
+            latest.update(published_by=None, published_display_name=None, published_at=None)
+            if latest.get("version") is not None:
+                source = latest.get("source_filename")
+                candidates = entry["archive"].get(latest["version"], [])
+                archive_file = next(
+                    (item for item in candidates if not source or item["filename"] == source),
+                    candidates[0] if len(candidates) == 1 else None,
+                )
+                if archive_file:
+                    for field in ("published_by", "published_display_name", "published_at"):
+                        latest[field] = archive_file.get(field)
             entry["latest"].append(latest)
         for application, data in grouped.items():
             versions = [{"version": version, "files": sorted(data["archive"][version], key=lambda f: f["filename"])} for version in _version_sort(list(data["archive"]))]

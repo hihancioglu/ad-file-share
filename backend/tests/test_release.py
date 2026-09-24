@@ -20,6 +20,7 @@ from release_service import (  # noqa: E402
     asset_exists_on_nexus,
     promote_nexus_asset,
     resolve_latest_filename,
+    upload_archive_publish_metadata,
     upload_to_nexus,
 )
 
@@ -35,6 +36,8 @@ def client():
     }
     with patch.object(main, "get_release_catalog", return_value=[item]), patch.object(
         main, "upload_release_metadata", return_value="https://repo/metadata"
+    ), patch.object(
+        main, "upload_archive_publish_metadata", return_value="https://repo/archive-metadata"
     ):
         yield main.app.test_client()
 
@@ -117,6 +120,21 @@ def test_create_application_uploads_archive_latest_and_metadata(client):
     assert clear.call_count == 2
     assert audit.call_args.kwargs["category"] == "release_application_create"
     assert "never-store-this" not in str(audit.call_args)
+
+
+def test_create_application_writes_archive_publisher_metadata(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "upload_to_nexus", side_effect=["archive", "latest"]), patch.object(
+        main, "upload_archive_publish_metadata", return_value="metadata"
+    ) as metadata, patch.object(main, "upload_release_metadata", return_value="current"), patch.object(main, "log_activity"):
+        response = client.post("/release/apps/create", data=create_form())
+    assert response.status_code == 200
+    assert metadata.call_args.kwargs["repository"] == "apps-internal"
+    assert metadata.call_args.kwargs["source_filename"] == "BMS_1.1.10.166_x64.exe"
+    assert metadata.call_args.kwargs["published_by"] == "publisher"
+    assert metadata.call_args.kwargs["published_display_name"] is None
 
 
 def test_create_application_rejects_existing_fresh_catalog_entry(client):
@@ -373,6 +391,54 @@ def test_publish_writes_identity_metadata_with_request_credentials(client):
     }
 
 
+def test_publish_writes_archive_publisher_metadata_before_latest(client):
+    login(client)
+    with client.session_transaction() as flask_session:
+        flask_session["display_name"] = "Publisher Person"
+    order = []
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "upload_to_nexus", side_effect=lambda **kw: order.append(kw["repository"]) or "url"), patch.object(
+        main, "upload_archive_publish_metadata", side_effect=lambda **kw: order.append("archive-metadata") or "metadata"
+    ) as metadata, patch.object(main, "upload_release_metadata", side_effect=lambda **kw: order.append("latest-metadata") or "metadata"), patch.object(main, "log_activity"):
+        response = client.post("/release/publish", data=publish_form())
+    assert response.status_code == 200
+    assert order == ["apps-public", "archive-metadata", "apps-public-latest", "latest-metadata"]
+    assert metadata.call_args.kwargs["published_by"] == "publisher"
+    assert metadata.call_args.kwargs["published_display_name"] == "Publisher Person"
+    assert metadata.call_args.kwargs["repository"] == "apps-public"
+
+
+def test_archive_metadata_failure_is_reported_as_partial(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "asset_exists_on_nexus", return_value=False
+    ), patch.object(main, "upload_to_nexus", return_value="archive"), patch.object(
+        main, "upload_archive_publish_metadata", side_effect=NexusUploadError("secret", 502)
+    ), patch.object(main, "upload_release_metadata") as latest_metadata:
+        response = client.post("/release/publish", data=publish_form())
+    assert response.status_code == 502
+    assert response.get_json()["partial"] is True
+    assert response.get_json()["error"] == "Arşiv dosyası yüklendi ancak yayınlayan metadata bilgisi kaydedilemedi."
+    assert "secret" not in response.get_data(as_text=True)
+    latest_metadata.assert_not_called()
+
+
+def test_archive_metadata_payload_has_identity_but_no_credentials(nexus_settings):
+    with patch("release_service.upload_to_nexus", return_value="url") as upload:
+        upload_archive_publish_metadata(
+            settings=nexus_settings, repository="archive", application="App",
+            version="1.0", source_filename="app.exe", published_by="publisher",
+            published_display_name=None, username="publisher", password="top-secret",
+            published_at="2026-09-24T09:39:46Z",
+        )
+    payload = upload.call_args.kwargs["stream"].read().decode()
+    assert '"published_by":"publisher"' in payload
+    assert '"published_display_name":null' in payload
+    assert "top-secret" not in payload
+    assert all(word not in payload.lower() for word in ("password", "token", "authorization", "cookie"))
+
+
 def test_publish_metadata_failure_reports_binary_partial_success(client):
     login(client)
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
@@ -403,6 +469,18 @@ def test_promote_writes_metadata_after_binary_with_user_credentials(client):
     assert metadata.call_args.kwargs["repository"] == "apps-public-latest"
     assert metadata.call_args.kwargs["username"] == "publisher"
     assert metadata.call_args.kwargs["password"] == "never-store-this"
+
+
+def test_promote_does_not_change_archive_publisher_metadata(client):
+    login(client)
+    with patch.object(main, "is_release_uploader", return_value=True), patch.object(
+        main, "get_release_catalog", return_value=promote_catalog()
+    ), patch.object(main, "promote_nexus_asset", return_value="latest"), patch.object(
+        main, "upload_release_metadata", return_value="metadata"
+    ), patch.object(main, "upload_archive_publish_metadata") as archive_metadata, patch.object(main, "log_activity"):
+        response = client.post("/release/promote-latest", data=promote_form())
+    assert response.status_code == 200
+    archive_metadata.assert_not_called()
 
 
 def test_archive_failure_does_not_upload_latest(client):
@@ -544,7 +622,7 @@ def test_catalog_cache_cleared_after_success_and_partial(client):
         main, "upload_to_nexus", side_effect=["archive", "latest"]
     ), patch.object(main, "log_activity"):
         assert client.post("/release/publish", data=publish_form()).status_code == 200
-    assert clear.call_count == 3
+    assert clear.call_count == 4
 
     with patch.object(main, "is_release_uploader", return_value=True), patch.object(
         main, "asset_exists_on_nexus", return_value=False
@@ -553,7 +631,7 @@ def test_catalog_cache_cleared_after_success_and_partial(client):
     ), patch.object(main, "log_activity"):
         response = client.post("/release/publish", data=publish_form())
     assert response.get_json()["partial"] is True
-    clear.assert_called_once()
+    assert clear.call_count == 2
 
 
 def test_catalog_cache_cleared_after_latest_retry(client):

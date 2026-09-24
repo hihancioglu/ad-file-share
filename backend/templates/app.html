@@ -402,7 +402,7 @@
             <div id="release-app-status" class="text-muted mb-2"></div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle" id="release-app-table">
-                    <thead><tr><th>Uygulama</th><th>Erişim</th><th>Güncel Sürüm</th><th>Sabit Dosya</th><th>Arşiv Sürümü</th><th>İşlem</th></tr></thead>
+                    <thead><tr><th>Uygulama</th><th>Erişim</th><th>Güncel Sürüm</th><th>Sabit Dosya</th><th>Yayınlayan</th><th>Arşiv Sürümü</th><th>İşlem</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>
@@ -904,18 +904,19 @@ function renderReleaseApps() {
     body.replaceChildren();
     items.forEach(item => {
         const row=document.createElement('tr');
-        const values=[item.application, null, null, item.latest_filename || '—', String(item.version_count ?? 0), null];
+        const publisher=item.latest_published_display_name || item.latest_published_by || '—';
+        const values=[item.application, null, null, item.latest_filename || '—', publisher, String(item.version_count ?? 0), null];
         values.forEach((value,index) => {
             const cell=document.createElement('td');
             if (index===1) cell.append(visibilityBadge(item.visibility));
             else if (index===2) { const span=document.createElement('span'); span.textContent=latestDisplay(item); if(item.latest_detection!=='checksum' && item.latest_detection!=='metadata') span.className='badge text-bg-warning'; cell.append(span); }
-            else if(index===5) { const button=document.createElement('button'); button.type='button'; button.className='btn btn-sm btn-outline-primary'; button.textContent='Detay'; button.addEventListener('click',()=>showReleaseAppDetail(item)); cell.append(button); }
+            else if(index===6) { const button=document.createElement('button'); button.type='button'; button.className='btn btn-sm btn-outline-primary'; button.textContent='Detay'; button.addEventListener('click',()=>showReleaseAppDetail(item)); cell.append(button); }
             else cell.textContent=value;
             row.append(cell);
         });
         body.append(row);
     });
-    if (!items.length) { const row=document.createElement('tr'); const cell=document.createElement('td'); cell.colSpan=6; cell.className='text-center text-muted'; cell.textContent='Uygulama bulunamadı.'; row.append(cell); body.append(row); }
+    if (!items.length) { const row=document.createElement('tr'); const cell=document.createElement('td'); cell.colSpan=7; cell.className='text-center text-muted'; cell.textContent='Uygulama bulunamadı.'; row.append(cell); body.append(row); }
 }
 
 function downloadUrl(type, visibility, application, filename, version) {
@@ -959,13 +960,14 @@ async function showReleaseAppDetail(summary) {
         if (latest) {
             const card=document.createElement('div'); card.className='card mb-4'; const body=document.createElement('div'); body.className='card-body';
             const current=(latest.detection==='checksum' || latest.detection==='metadata') && latest.version ? latest.version : (latest.detection==='ambiguous'?'Birden fazla eşleşme':'Belirlenemedi');
-            [['Güncel Sürüm',current],['Sabit Dosya',latest.filename],['Boyut',formatFileSize(latest.file_size)],['Son Güncelleme',formatReleaseDate(latest.last_modified)],['Sabit Link',latest.url || '—']].forEach(([label,value])=>{const line=document.createElement('p');line.className='mb-1';const strong=document.createElement('strong');strong.textContent=`${label}: `;line.append(strong,value);body.append(line);});
-            if(latest.url) body.append(releaseUrlRow('Bağlantı',latest.url));
+            const publisher=latest.published_display_name || latest.published_by || '—';
+            [['Güncel Sürüm',current],['Sabit Dosya',latest.filename],['Boyut',formatFileSize(latest.file_size)],['Son Güncelleme',formatReleaseDate(latest.last_modified)],['Yayınlayan',publisher],['Yayınlama Tarihi',formatReleaseDate(latest.published_at)]].forEach(([label,value])=>{const line=document.createElement('p');line.className='mb-1';const strong=document.createElement('strong');strong.textContent=`${label}: `;line.append(strong,value);body.append(line);});
+            if(latest.url) body.append(releaseUrlRow('Sabit Link',latest.url));
             const download=document.createElement('a');download.className='btn btn-primary btn-sm mt-3';download.textContent='İndir';download.href=downloadUrl('latest',item.visibility,item.application,latest.filename);body.append(download);card.append(body);container.append(card);
         }
         const archiveTitle=document.createElement('h4'); archiveTitle.textContent='Sürüm Arşivi'; container.append(archiveTitle);
-        const wrapper=document.createElement('div');wrapper.className='table-responsive';const table=document.createElement('table');table.className='table align-middle';table.innerHTML='<thead><tr><th>Versiyon</th><th>Dosya</th><th>Boyut</th><th>Tarih</th><th>İşlem</th></tr></thead>';const tbody=document.createElement('tbody');
-        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(version.version,file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else if(releaseCanWrite){const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
+        const wrapper=document.createElement('div');wrapper.className='table-responsive';const table=document.createElement('table');table.className='table align-middle';table.innerHTML='<thead><tr><th>Versiyon</th><th>Dosya</th><th>Boyut</th><th>Tarih</th><th>Yayınlayan</th><th>İşlem</th></tr></thead>';const tbody=document.createElement('tbody');
+        item.versions.forEach(version=>version.files.forEach(file=>{const row=document.createElement('tr');const publisher=file.published_display_name || file.published_by || '—';[version.version,file.filename,formatFileSize(file.file_size),formatReleaseDate(file.last_modified),publisher].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});const action=document.createElement('td');action.className='d-flex gap-2 align-items-center';const link=document.createElement('a');link.className='btn btn-sm btn-outline-primary';link.textContent='İndir';link.href=downloadUrl('archive',item.visibility,item.application,file.filename,version.version);action.append(link);if(archiveFileIsCurrent(version.version,file,item.latest_files)){const badge=document.createElement('span');badge.className='badge text-bg-success';badge.textContent='CURRENT';action.append(badge);}else if(releaseCanWrite){const promote=document.createElement('button');promote.type='button';promote.className='btn btn-sm btn-outline-warning';promote.textContent='Latest Yap';promote.addEventListener('click',()=>openPromoteModal(item,version.version,file));action.append(promote);}row.append(action);tbody.append(row);}));
         table.append(tbody);wrapper.append(table);container.append(wrapper);
     } catch(error) { container.replaceChildren(releaseAlert('danger',error.message)); }
 }
