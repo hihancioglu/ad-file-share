@@ -6,32 +6,9 @@ import json
 import logging
 import mimetypes
 import socket
-import time
 import zipfile
 import ipaddress
-import html
 from urllib.parse import quote, urlparse
-
-# Ensure previewed file types have proper MIME types
-mimetypes.add_type("image/png", ".png")
-mimetypes.add_type("image/jpeg", ".jpg")
-mimetypes.add_type("image/jpeg", ".jpeg")
-mimetypes.add_type("application/vnd.ms-excel", ".xls")
-mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"
-)
-mimetypes.add_type("application/msword", ".doc")
-mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".docx",
-)
-mimetypes.add_type("application/vnd.ms-powerpoint", ".ppt")
-mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".pptx",
-)
-mimetypes.add_type("text/csv", ".csv")
-
 import msal
 import requests
 from functools import lru_cache
@@ -85,8 +62,27 @@ from release_service import (
     upload_to_nexus,
 )
 
+# Ensure previewed file types have proper MIME types
+mimetypes.add_type("image/png", ".png")
+mimetypes.add_type("image/jpeg", ".jpg")
+mimetypes.add_type("image/jpeg", ".jpeg")
+mimetypes.add_type("application/vnd.ms-excel", ".xls")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"
+)
+mimetypes.add_type("application/msword", ".doc")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docx",
+)
+mimetypes.add_type("application/vnd.ms-powerpoint", ".ppt")
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pptx",
+)
+mimetypes.add_type("text/csv", ".csv")
+
 load_dotenv()
-add_missing_columns()
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://sendv2.baylan.info.tr").rstrip("/")
 LOGIN_BASE_URL = os.getenv("LOGIN_BASE_URL", "https://send.baylan.local").rstrip("/")
@@ -94,8 +90,14 @@ INTERNAL_BASE_URL = os.getenv("INTERNAL_BASE_URL", "https://send.baylan.local").
 INTERNAL_HOST = (urlparse(INTERNAL_BASE_URL).hostname or "").lower()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "super-secret-key")
+flask_secret_key = os.getenv("FLASK_SECRET_KEY")
+if not flask_secret_key:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY is required; configure it in the environment or backend/.env"
+    )
+app.secret_key = flask_secret_key
 CORS(app, supports_credentials=True)
+add_missing_columns()
 
 
 class JsonSyslogFormatter(logging.Formatter):
@@ -1576,7 +1578,7 @@ def cleanup_expired_files():
     try:
         expired = (
             db.query(UserFile)
-            .filter(UserFile.deleted_at != None)
+            .filter(UserFile.deleted_at.is_not(None))
             .filter(UserFile.deleted_at < now - timedelta(days=15))
             .all()
         )
@@ -1626,7 +1628,7 @@ def user_can_access_file(owner: str, filename: str, requester: str | None, db):
             .filter(
                 TeamMember.team_id.in_(valid_team_ids),
                 TeamMember.username == requester,
-                TeamMember.accepted == True,
+                TeamMember.accepted.is_(True),
             )
             .first()
         )
@@ -1952,24 +1954,24 @@ def list_files():
                 )
                 for m in db.query(UserFile)
                 .filter_by(username=username)
-                .filter(UserFile.deleted_at == None)
+                .filter(UserFile.deleted_at.is_(None))
                 .all()
             }
             now = datetime.utcnow()
             links = {
-                l.filename: {
-                    "token": l.token,
-                    "expires_at": l.expires_at,
-                    "approved": l.approved,
-                    "rejected": l.rejected,
-                    "max_downloads": l.max_downloads,
-                    "download_count": l.download_count or 0,
-                    "is_internal": bool(l.is_internal),
+                link.filename: {
+                    "token": link.token,
+                    "expires_at": link.expires_at,
+                    "approved": link.approved,
+                    "rejected": link.rejected,
+                    "max_downloads": link.max_downloads,
+                    "download_count": link.download_count or 0,
+                    "is_internal": bool(link.is_internal),
                 }
-                for l in db.query(ShareLink)
+                for link in db.query(ShareLink)
                 .filter_by(username=username)
-                .filter(ShareLink.rejected == False)
-                .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
+                .filter(ShareLink.rejected.is_(False))
+                .filter(ShareLink.expires_at.is_(None) | (ShareLink.expires_at > now))
                 .all()
             }
             counts = {
@@ -2054,23 +2056,23 @@ def list_files():
                 m.original_filename or m.filename,
             )
             for m in db.query(UserFile)
-            .filter(UserFile.deleted_at == None)
+            .filter(UserFile.deleted_at.is_(None))
             .all()
         }
         now = datetime.utcnow()
         links = {
-            (l.username, l.filename): {
-                "token": l.token,
-                "expires_at": l.expires_at,
-                "approved": l.approved,
-                "rejected": l.rejected,
-                "max_downloads": l.max_downloads,
-                "download_count": l.download_count or 0,
-                "is_internal": bool(l.is_internal),
+            (link.username, link.filename): {
+                "token": link.token,
+                "expires_at": link.expires_at,
+                "approved": link.approved,
+                "rejected": link.rejected,
+                "max_downloads": link.max_downloads,
+                "download_count": link.download_count or 0,
+                "is_internal": bool(link.is_internal),
             }
-            for l in db.query(ShareLink)
-            .filter(ShareLink.rejected == False)
-            .filter((ShareLink.expires_at == None) | (ShareLink.expires_at > now))
+            for link in db.query(ShareLink)
+            .filter(ShareLink.rejected.is_(False))
+            .filter(ShareLink.expires_at.is_(None) | (ShareLink.expires_at > now))
             .all()
         }
         counts = {
@@ -2090,7 +2092,7 @@ def list_files():
                 FileMessage.filename,
                 func.count(),
             )
-            .filter(FileMessage.read == False)
+            .filter(FileMessage.read.is_(False))
             .group_by(FileMessage.username, FileMessage.filename)
             .all()
         }
@@ -2377,7 +2379,7 @@ def list_trash():
     admin_mode = request.form.get("admin") and is_admin(username)
     db = SessionLocal()
     try:
-        query = db.query(UserFile).filter(UserFile.deleted_at != None)
+        query = db.query(UserFile).filter(UserFile.deleted_at.is_not(None))
         if not admin_mode:
             query = query.filter_by(username=username)
         metas = query.all()
@@ -2403,7 +2405,7 @@ def empty_trash():
     admin_mode = request.form.get("admin") and is_admin(username)
     db = SessionLocal()
     try:
-        query = db.query(UserFile).filter(UserFile.deleted_at != None)
+        query = db.query(UserFile).filter(UserFile.deleted_at.is_not(None))
         if not admin_mode:
             query = query.filter_by(username=username)
         metas = query.all()
@@ -3063,16 +3065,16 @@ def stats():
         logs = db.query(DownloadLog).filter_by(username=username).all()
         logs_data = [
             {
-                "filename": l.filename,
-                "timestamp": l.timestamp.isoformat(),
-                "ip_address": l.ip_address,
-                "country": l.country,
+                "filename": log.filename,
+                "timestamp": log.timestamp.isoformat(),
+                "ip_address": log.ip_address,
+                "country": log.country,
             }
-            for l in logs
+            for log in logs
         ]
         counts = {}
-        for l in logs:
-            counts[l.filename] = counts.get(l.filename, 0) + 1
+        for log in logs:
+            counts[log.filename] = counts.get(log.filename, 0) + 1
     finally:
         db.close()
     return jsonify(
@@ -3104,10 +3106,10 @@ def dashboard_data():
         logs = db.query(DownloadLog).filter_by(username=username).all()
         counts_by_file = {}
         counts_by_country = {}
-        for l in logs:
-            counts_by_file[l.filename] = counts_by_file.get(l.filename, 0) + 1
-            if l.country:
-                counts_by_country[l.country] = counts_by_country.get(l.country, 0) + 1
+        for log in logs:
+            counts_by_file[log.filename] = counts_by_file.get(log.filename, 0) + 1
+            if log.country:
+                counts_by_country[log.country] = counts_by_country.get(log.country, 0) + 1
         top_files = sorted(
             counts_by_file.items(), key=lambda x: x[1], reverse=True
         )[:5]
@@ -3154,16 +3156,16 @@ def dashboard_data():
                 expiring_map[f.filename] = min(
                     expiring_map.get(f.filename, delta), delta
                 )
-        for l in user_links:
+        for link in user_links:
             if (
-                l.expires_at
-                and now < l.expires_at <= upcoming
-                and l.approved
-                and not l.rejected
+                link.expires_at
+                and now < link.expires_at <= upcoming
+                and link.approved
+                and not link.rejected
             ):
-                delta = l.expires_at - now
-                expiring_map[l.filename] = min(
-                    expiring_map.get(l.filename, delta), delta
+                delta = link.expires_at - now
+                expiring_map[link.filename] = min(
+                    expiring_map.get(link.filename, delta), delta
                 )
         expiring = [(fn, td) for fn, td in expiring_map.items()]
         expiring.sort(key=lambda x: x[1])
