@@ -738,6 +738,171 @@ def _release_form(include_version: bool):
     )
 
 
+@app.route("/release/apps/create", methods=["POST"])
+def release_app_create():
+    """Create the first immutable archive and explicitly named stable asset."""
+    username, auth_error = _release_writer()
+    if auth_error:
+        return auth_error
+
+    try:
+        application = sanitize_release_segment(
+            request.form.get("application"), "application"
+        )
+        version = sanitize_release_segment(request.form.get("version"), "version")
+        visibility = (request.form.get("visibility") or "").strip().lower()
+        settings = NexusSettings.from_environment()
+        archive_repo, latest_repo = get_repository_mapping(visibility, settings)
+        latest_filename = sanitize_release_filename(
+            request.form.get("latest_filename"), "sabit indirme dosya adı"
+        )
+        if os.path.splitext(latest_filename)[1] in {"", "."}:
+            raise ReleaseValidationError(
+                "Sabit indirme dosya adı bir dosya uzantısı içermelidir."
+            )
+        upload = request.files.get("file")
+        if upload is None or not upload.filename:
+            raise ReleaseValidationError("Yüklenecek dosya bulunamadı.")
+        archive_filename = sanitize_release_filename(upload.filename, "dosya adı")
+        password = request.form.get("nexus_password")
+        if not password:
+            raise ReleaseValidationError("Nexus parolası gereklidir.")
+
+        # Creating is uniqueness-sensitive: never use the process-local TTL cache.
+        clear_catalog_cache()
+        catalog = get_release_catalog(settings)
+        if any(
+            item["application"] == application
+            and item["visibility"] == visibility
+            for item in catalog
+        ):
+            return jsonify(
+                success=False,
+                error="Bu uygulama zaten mevcut. Yeni sürüm yayınlama ekranını kullanın.",
+            ), 409
+    except ReleaseValidationError as exc:
+        return jsonify(success=False, error=str(exc)), 400
+    except NexusCatalogError as exc:
+        return jsonify(success=False, error=exc.message), exc.status_code
+
+    archive_path = f"{application}/{version}/{archive_filename}"
+    latest_path = f"{application}/{latest_filename}"
+    try:
+        if asset_exists_on_nexus(
+            settings=settings,
+            repository=archive_repo,
+            asset_path=archive_path,
+            username=username,
+            password=password,
+        ):
+            return jsonify(
+                success=False,
+                partial=False,
+                error="Bu uygulama sürümü daha önce yayınlanmış.",
+            ), 409
+        archive_url = upload_to_nexus(
+            settings=settings,
+            repository=archive_repo,
+            asset_path=archive_path,
+            stream=upload.stream,
+            username=username,
+            password=password,
+            content_type=upload.mimetype,
+        )
+    except NexusUploadError as exc:
+        return jsonify(success=False, partial=False, error=exc.message), exc.status_code
+
+    try:
+        upload.stream.seek(0)
+        latest_url = upload_to_nexus(
+            settings=settings,
+            repository=latest_repo,
+            asset_path=latest_path,
+            stream=upload.stream,
+            username=username,
+            password=password,
+            content_type=upload.mimetype,
+        )
+    except (NexusUploadError, OSError) as exc:
+        clear_catalog_cache()
+        status = exc.status_code if isinstance(exc, NexusUploadError) else 500
+        log_activity(
+            username,
+            f"{application} uygulamasını {visibility.upper()} olarak {version} sürümü ile kısmen oluşturdu",
+            category="release_application_create_partial",
+            filename=archive_filename,
+            actor=username,
+        )
+        return jsonify(
+            success=False,
+            partial=True,
+            archive_uploaded=True,
+            latest_uploaded=False,
+            application=application,
+            visibility=visibility,
+            version=version,
+            archive_filename=archive_filename,
+            latest_filename=latest_filename,
+            archive_url=archive_url,
+            error="Arşiv oluşturuldu ancak sabit latest dosyası oluşturulamadı.",
+        ), status
+
+    try:
+        upload_release_metadata(
+            settings=settings,
+            repository=latest_repo,
+            application=application,
+            version=version,
+            source_filename=archive_filename,
+            latest_filename=latest_filename,
+            username=username,
+            password=password,
+        )
+    except NexusUploadError as exc:
+        clear_catalog_cache()
+        log_activity(
+            username,
+            f"{application} uygulamasını oluşturdu ancak sürüm metadata bilgisi oluşturulamadı",
+            category="release_application_create_partial",
+            filename=archive_filename,
+            actor=username,
+        )
+        return jsonify(
+            success=False,
+            partial=True,
+            archive_uploaded=True,
+            latest_uploaded=True,
+            metadata_uploaded=False,
+            application=application,
+            visibility=visibility,
+            version=version,
+            archive_filename=archive_filename,
+            latest_filename=latest_filename,
+            archive_url=archive_url,
+            latest_url=latest_url,
+            error="Latest dosya oluşturuldu ancak sürüm metadata bilgisi oluşturulamadı.",
+        ), exc.status_code
+
+    clear_catalog_cache()
+    log_activity(
+        username,
+        f"{username} {application} uygulamasını {visibility.upper()} olarak {version} sürümü ile oluşturdu",
+        category="release_application_create",
+        filename=archive_filename,
+        actor=username,
+    )
+    return jsonify(
+        success=True,
+        application=application,
+        visibility=visibility,
+        version=version,
+        archive_filename=archive_filename,
+        latest_filename=latest_filename,
+        archive_url=archive_url,
+        latest_url=latest_url,
+    )
+
+
 @app.route("/release/publish", methods=["POST"])
 def release_publish():
     username, auth_error = _release_writer()
