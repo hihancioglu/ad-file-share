@@ -4,6 +4,7 @@ ldap3
 psycopg2-binary
 sqlalchemy
 python-dotenv
+jinja2
 msal
 requests
 packaging
